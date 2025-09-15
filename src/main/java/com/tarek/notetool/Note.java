@@ -31,15 +31,24 @@ public class Note {
     public static class Goal {
         private String description;
         private boolean completed;
+        private List<Goal> subGoals;
 
         public Goal(String description) {
             this.description = description;
             this.completed = false;
+            this.subGoals = new ArrayList<>();
         }
 
         public Goal(Goal original) {
             this.description = original.description;
             this.completed = original.completed;
+            // Deep copy of sub-goals
+            this.subGoals = new ArrayList<>();
+            if (original.subGoals != null) {
+                for (Goal subGoal : original.subGoals) {
+                    this.subGoals.add(new Goal(subGoal)); // Recursive copy
+                }
+            }
         }
 
         public String getDescription() {
@@ -52,6 +61,31 @@ public class Note {
 
         public void setCompleted(boolean completed) {
             this.completed = completed;
+        }
+
+        public void setDescription(String description) {
+            this.description = description;
+        }
+
+        public List<Goal> getSubGoals() {
+            return Collections.unmodifiableList(subGoals);
+        }
+
+        public void setSubGoals(List<Goal> subGoals) {
+            if (subGoals == null) {
+                this.subGoals = new ArrayList<>();
+            } else {
+                // Create a defensive copy to prevent external modifications to the list
+                this.subGoals = new ArrayList<>(subGoals);
+            }
+        }
+
+        public void addSubGoal(Goal subGoal) {
+            this.subGoals.add(subGoal);
+        }
+
+        public void removeSubGoal(Goal subGoal) {
+            this.subGoals.remove(subGoal);
         }
     }
 
@@ -76,7 +110,7 @@ public class Note {
     private String content;
     private Status status;
     private Priority priority;
-    private LocalDateTime creationDate;
+    private final LocalDateTime creationDate;
     private LocalDateTime lastModifiedDate;
     private LocalDateTime dueDate;
     private List<User> assignees;
@@ -104,9 +138,14 @@ public class Note {
     }
 
     /**
-     * A true copy constructor that creates an identical copy of a note,
-     * including its ID and timestamps. Used for creating an editable snapshot.
-     * @param original The note to duplicate.
+     * A deep copy constructor that creates an identical, but separate, instance of a note.
+     * This is crucial for the "edit" functionality, where we need to work on a temporary
+     * copy (`noteCopy`) and only commit the changes back to the original object upon saving.
+     * This constructor performs a deep copy of the `goals` list to ensure that changes
+     * to the copy's goals do not affect the original note's goals until the `updateFrom`
+     * method is explicitly called.
+     *
+     * @param original The note to create a snapshot of.
      */
     public Note(Note original) {
         this.id = original.id;
@@ -128,8 +167,11 @@ public class Note {
 
     /**
      * Creates a duplicate of this note with a new ID and current timestamps.
-     * This is used for the "Duplicate Note" feature.
-     * @return A new Note instance that is a functional duplicate of the original.
+     * This is used for the "Duplicate Note" feature in the UI. Unlike the copy constructor,
+     * this method is intended to create a brand-new entity in the system that is based on
+     * an existing one. Comments are intentionally not copied.
+     *
+     * @return A new `Note` instance that is a functional duplicate of the original.
      */
     public Note duplicate() {
         // Use the main constructor to get a new ID and timestamps
@@ -255,8 +297,11 @@ public class Note {
     /**
      * Updates this note's fields from another note instance.
      * This is used to commit changes from an edited copy back to the original object.
-     * The creation date and ID are not changed.
-     * @param source The note to copy data from.
+     * The creation date and ID are immutable and are not changed. This method performs
+     * a deep copy of the goals to ensure the receiving note has a completely independent
+     * goal hierarchy.
+     *
+     * @param source The note (typically an edited copy) to copy data from.
      * @throws IllegalArgumentException if the source note has a different ID.
      */
     public void updateFrom(Note source) {

@@ -17,8 +17,8 @@ public class ThemeManager {
     private static final String ACCENT_SUBTLE_KEY = "colorAccentSubtle";
 
     // Default Colors (from purple-theme.css)
-    public static final Color DEFAULT_ACCENT_FG = Color.web("#9370DB");
-    public static final Color DEFAULT_ACCENT_EMPHASIS = Color.web("#8A2BE2");
+    public static final Color DEFAULT_ACCENT_FG = Color.web("#8A2BE2");       // BlueViolet
+    public static final Color DEFAULT_ACCENT_EMPHASIS = Color.web("#9370DB"); // MediumPurple
     public static final Color DEFAULT_ACCENT_MUTED = Color.web("rgba(147, 112, 219, 0.4)");
     public static final Color DEFAULT_ACCENT_SUBTLE = Color.web("rgba(147, 112, 219, 0.15)");
 

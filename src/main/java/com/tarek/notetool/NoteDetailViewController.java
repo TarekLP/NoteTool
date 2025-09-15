@@ -6,13 +6,17 @@ import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Button;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
+import javafx.scene.control.TreeCell;
+import javafx.scene.control.TreeItem;
+import javafx.scene.control.TreeView;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.layout.HBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.layout.Priority;
@@ -26,6 +30,8 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
 import java.util.stream.IntStream;
+import java.util.stream.Collectors;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.List;
@@ -52,11 +58,16 @@ public class NoteDetailViewController {
     @FXML
     private ProgressBar goalsProgressBar;
     @FXML
-    private ListView<Note.Goal> goalsListView;
+    private VBox goalsContainer; // Placeholder for the TreeView
+
+    // The TreeView is now created programmatically to avoid FXML injection issues.
+    private TreeView<Note.Goal> goalsTreeView;
     @FXML
     private ListView<User> assigneeListView;
     @FXML
     private TextField newGoalField;
+    @FXML
+    private Button clearCompletedGoalsButton;
 
     @FXML
     private ListView<Note.Comment> commentsListView;
@@ -90,6 +101,12 @@ public class NoteDetailViewController {
         // Allow adding goals by pressing Enter in the text field
         newGoalField.setOnAction(e -> handleAddGoal());
 
+        // Wire up the button to clear completed goals.
+        if (clearCompletedGoalsButton != null) {
+            clearCompletedGoalsButton.setOnAction(e -> handleClearCompletedGoals());
+            Tooltip.install(clearCompletedGoalsButton, new Tooltip("Remove all completed goals from the list"));
+        }
+
         // Allow adding comments by pressing Enter in the text field
         newCommentField.setOnAction(e -> handleAddComment());
 
@@ -98,47 +115,19 @@ public class NoteDetailViewController {
 
         // Populate time selectors
         dueHourComboBox.setItems(FXCollections.observableArrayList(IntStream.range(0, 24).boxed().toList()));
-        dueMinuteComboBox.setItems(FXCollections.observableArrayList(List.of(0, 15, 30, 45)));
+        dueMinuteComboBox.setItems(FXCollections.observableArrayList(
+                IntStream.iterate(0, i -> i < 60, i -> i + 5).boxed().toList()
+        ));
 
-        // --- Goals ListView setup ---
-        goalsListView.setCellFactory(lv -> new ListCell<>() {
-            private final HBox hbox = new HBox(10);
-            private final CheckBox checkBox = new CheckBox();
-            private final Button deleteButton = new Button("X");
-
-            {
-                // When the checkbox is toggled, update the goal's completed status
-                // and refresh the progress bar.
-                checkBox.setOnAction(event -> {
-                    if (getItem() != null) {
-                        getItem().setCompleted(checkBox.isSelected());
-                        updateGoalsProgress();
-                    }
-                });
-
-                deleteButton.setOnAction(event -> {
-                    if (getItem() != null) {
-                        getListView().getItems().remove(getItem());
-                        updateGoalsProgress();
-                    }
-                });
-
-                HBox.setHgrow(checkBox, Priority.ALWAYS);
-                hbox.getChildren().addAll(checkBox, deleteButton);
-            }
-
-            @Override
-            protected void updateItem(Note.Goal item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setGraphic(null);
-                } else {
-                    checkBox.setText(item.getDescription());
-                    checkBox.setSelected(item.isCompleted());
-                    setGraphic(hbox);
-                }
-            }
-        });
+        // --- Goals TreeView setup ---
+        // The TreeView is now created programmatically to ensure it's never null,
+        // bypassing potential FXML loading or build caching issues.
+        goalsTreeView = new TreeView<>();
+        goalsTreeView.setEditable(true);
+        goalsTreeView.setCellFactory(tv -> new GoalTreeCell());
+        goalsTreeView.setShowRoot(false);
+        VBox.setVgrow(goalsTreeView, Priority.ALWAYS);
+        goalsContainer.getChildren().add(goalsTreeView);
 
         // --- Comments ListView setup ---
         commentsListView.setCellFactory(lv -> new ListCell<>() {
@@ -248,7 +237,11 @@ public class NoteDetailViewController {
         }
 
         // Populate goals
-        goalsListView.setItems(FXCollections.observableArrayList(noteCopy.getGoals()));
+        TreeItem<Note.Goal> root = new TreeItem<>(); // Dummy root
+        noteCopy.getGoals().forEach(goal -> root.getChildren().add(createGoalTreeItem(goal)));
+        goalsTreeView.setRoot(root);
+        goalsTreeView.getRoot().setExpanded(true);
+
         commentsListView.setItems(FXCollections.observableArrayList(noteCopy.getComments()));
         updateGoalsProgress();
 
@@ -258,6 +251,17 @@ public class NoteDetailViewController {
 
         // Auto-focus the title field
         Platform.runLater(titleField::requestFocus);
+    }
+
+    /**
+     * Recursively builds a TreeItem structure from a given Goal object and its sub-goals.
+     */
+    private TreeItem<Note.Goal> createGoalTreeItem(Note.Goal goal) {
+        TreeItem<Note.Goal> item = new TreeItem<>(goal);
+        if (goal.getSubGoals() != null) {
+            goal.getSubGoals().forEach(subGoal -> item.getChildren().add(createGoalTreeItem(subGoal)));
+        }
+        return item;
     }
 
     /**
@@ -284,7 +288,11 @@ public class NoteDetailViewController {
         noteCopy.setAssignees(assigneeListView.getSelectionModel().getSelectedItems());
 
         // Persist the goals list back to the note object
-        noteCopy.setGoals(goalsListView.getItems());
+        List<Note.Goal> topLevelGoals = goalsTreeView.getRoot().getChildren().stream()
+                .map(TreeItem::getValue)
+                .collect(Collectors.toList());
+        noteCopy.setGoals(topLevelGoals);
+
         noteCopy.setComments(commentsListView.getItems());
         noteCopy.setTags(this.tempTags);
 
@@ -303,10 +311,56 @@ public class NoteDetailViewController {
         String description = newGoalField.getText();
         if (description != null && !description.trim().isEmpty()) {
             Note.Goal newGoal = new Note.Goal(description);
-            goalsListView.getItems().add(newGoal);
+            goalsTreeView.getRoot().getChildren().add(new TreeItem<>(newGoal));
             newGoalField.clear();
             updateGoalsProgress();
         }
+    }
+
+    /**
+     * Handles the action of clearing all completed goals from the list.
+     * This is triggered by the "Clear Completed" button, which is assumed to be
+     * added in the FXML layout near the goals list.
+     */
+    @FXML
+    private void handleClearCompletedGoals() {
+        if (goalsTreeView.getRoot() != null) {
+            boolean wasChanged = removeCompletedGoals(goalsTreeView.getRoot());
+            if (wasChanged) {
+                updateGoalsProgress();
+            }
+        }
+    }
+
+    /**
+     * Recursively traverses a TreeItem and removes any children that are marked as completed.
+     * @param parent The parent TreeItem to clean.
+     * @return true if any goals were removed, false otherwise.
+     */
+    private boolean removeCompletedGoals(TreeItem<Note.Goal> parent) {
+        if (parent == null || parent.getChildren().isEmpty()) {
+            return false;
+        }
+
+        // A list of children to remove from the parent
+        List<TreeItem<Note.Goal>> childrenToRemove = new ArrayList<>();
+        boolean wasChanged = false;
+
+        for (TreeItem<Note.Goal> child : parent.getChildren()) {
+            // Recursively clean the children of the child first.
+            if (removeCompletedGoals(child)) {
+                wasChanged = true;
+            }
+            // Now, check if the child itself is completed.
+            if (child.getValue().isCompleted()) {
+                childrenToRemove.add(child);
+            }
+        }
+        if (!childrenToRemove.isEmpty()) {
+            parent.getChildren().removeAll(childrenToRemove);
+            wasChanged = true;
+        }
+        return wasChanged;
     }
 
     @FXML
@@ -405,33 +459,256 @@ public class NoteDetailViewController {
         if (!currentAssignees.equals(initialAssignees)) return true;
 
         // Compare goals (order and content matter)
-        List<Note.Goal> currentGoals = goalsListView.getItems();
-        List<Note.Goal> initialGoals = initialNoteState.getGoals();
-        if (currentGoals.size() != initialGoals.size()) return true;
-        for (int i = 0; i < currentGoals.size(); i++) {
-            Note.Goal currentGoal = currentGoals.get(i);
-            Note.Goal initialGoal = initialGoals.get(i);
-            if (!Objects.equals(currentGoal.getDescription(), initialGoal.getDescription()) ||
-                currentGoal.isCompleted() != initialGoal.isCompleted()) {
-                return true;
-            }
-        }
+        List<Note.Goal> currentTopLevelGoals = new ArrayList<>();
+        currentTopLevelGoals = goalsTreeView.getRoot().getChildren().stream()
+                .map(TreeItem::getValue).collect(Collectors.toList());
+        if (areGoalListsDifferent(currentTopLevelGoals, initialNoteState.getGoals())) return true;
 
         return !tempTags.equals(initialNoteState.getTags());
     }
 
+    /**
+     * Recursively compares two lists of goals for any differences.
+     */
+    private boolean areGoalListsDifferent(List<Note.Goal> list1, List<Note.Goal> list2) {
+        if (list1.size() != list2.size()) return true;
+        for (int i = 0; i < list1.size(); i++) {
+            Note.Goal goal1 = list1.get(i);
+            Note.Goal goal2 = list2.get(i);
+            if (!Objects.equals(goal1.getDescription(), goal2.getDescription())) return true;
+            if (goal1.isCompleted() != goal2.isCompleted()) return true;
+            // Recursive call for sub-goals
+            if (areGoalListsDifferent(goal1.getSubGoals(), goal2.getSubGoals())) return true;
+        }
+        return false;
+    }
+
     private void updateGoalsProgress() {
-        long totalGoals = goalsListView.getItems().size();
+        if (goalsTreeView.getRoot() == null) {
+            goalsProgressBar.setProgress(0.0);
+            return;
+        }
+        List<Note.Goal> allGoals = new ArrayList<>();
+        collectAllGoals(goalsTreeView.getRoot(), allGoals);
+
+        long totalGoals = allGoals.size();
         if (totalGoals == 0) {
             goalsProgressBar.setProgress(0.0);
             return;
         }
 
-        long completedGoals = goalsListView.getItems().stream()
+        long completedGoals = allGoals.stream()
                 .filter(Note.Goal::isCompleted)
                 .count();
 
         double progress = (double) completedGoals / totalGoals;
         goalsProgressBar.setProgress(progress);
+    }
+
+    /**
+     * Recursively traverses a TreeItem and collects all Goal objects into a flat list.
+     */
+    private void collectAllGoals(TreeItem<Note.Goal> item, List<Note.Goal> allGoals) {
+        // Don't add the root's value if it's a dummy item
+        if (item.getValue() != null) {
+            allGoals.add(item.getValue());
+        }
+        for (TreeItem<Note.Goal> child : item.getChildren()) {
+            collectAllGoals(child, allGoals);
+        }
+    }
+
+    /**
+     * Recursively sets the completion status of all sub-goals of a given goal.
+     * @param parentItem The parent TreeItem.
+     * @param completed The completion status to set.
+     */
+    private void setSubGoalsCompletion(TreeItem<Note.Goal> parentItem, boolean completed) {
+        if (parentItem == null) {
+            return;
+        }
+        // Recurse for all children
+        for (TreeItem<Note.Goal> childItem : parentItem.getChildren()) {
+            // Set the completion for the child's goal
+            if (childItem.getValue() != null && childItem.getValue().isCompleted() != completed) {
+                childItem.getValue().setCompleted(completed);
+            }
+            // Recurse for grandchildren
+            setSubGoalsCompletion(childItem, completed);
+        }
+    }
+
+    /**
+     * Recursively checks and updates the completion status of parent goals.
+     * If all sub-goals of a parent are complete, the parent is marked as complete.
+     * If any sub-goal of a parent becomes incomplete, the parent is marked as incomplete.
+     * @param item The TreeItem whose parent's status needs to be checked.
+     */
+    private void updateParentCompletion(TreeItem<Note.Goal> item) {
+        if (item == null) {
+            return;
+        }
+
+        TreeItem<Note.Goal> parentItem = item.getParent();
+
+        // Stop if we've reached the (hidden) root or there's no parent
+        if (parentItem == null || parentItem.getValue() == null) {
+            return;
+        }
+
+        Note.Goal parentGoal = parentItem.getValue();
+
+        // Check if all children of the parent are completed by looking at the model
+        boolean allChildrenCompleted = parentGoal.getSubGoals().stream()
+                .allMatch(Note.Goal::isCompleted);
+
+        // If the parent's completion status needs to change, update it and recurse upwards
+        if (parentGoal.isCompleted() != allChildrenCompleted) {
+            parentGoal.setCompleted(allChildrenCompleted);
+            // Recurse to check the grandparent
+            updateParentCompletion(parentItem);
+        }
+    }
+
+    /**
+     * An inner class to define the look and behavior of each cell in the goals TreeView.
+     */
+    private class GoalTreeCell extends TreeCell<Note.Goal> {
+        private final HBox hbox = new HBox(5);
+        private final CheckBox checkBox = new CheckBox();
+        private final Button addSubGoalButton = new Button("+");
+        private final Button deleteButton = new Button("x");
+        private TextField editField;
+
+        public GoalTreeCell() {
+            Tooltip.install(addSubGoalButton, new Tooltip("Add Sub-goal"));
+            Tooltip.install(deleteButton, new Tooltip("Delete Goal"));
+            addSubGoalButton.getStyleClass().add("rich-text-editor-button");
+            deleteButton.getStyleClass().add("rich-text-editor-button");
+
+            checkBox.setOnAction(event -> {
+                if (getItem() != null) {
+                    boolean isSelected = checkBox.isSelected();
+                    getItem().setCompleted(isSelected);
+
+                    // Propagate completion status downwards to all sub-goals
+                    setSubGoalsCompletion(getTreeItem(), isSelected);
+
+                    // Propagate completion status upwards to parent goals
+                    updateParentCompletion(getTreeItem());
+
+                    goalsTreeView.refresh();
+                    updateGoalsProgress();
+                }
+            });
+
+            deleteButton.setOnAction(event -> {
+                TreeItem<Note.Goal> treeItem = getTreeItem();
+                if (treeItem != null && treeItem.getParent() != null) {
+                    TreeItem<Note.Goal> parentTreeItem = treeItem.getParent();
+                    // If the parent is not the invisible root, remove the goal from the parent goal's list of sub-goals
+                    if (parentTreeItem.getValue() != null) {
+                        parentTreeItem.getValue().removeSubGoal(getItem());
+                    }
+                    // Remove the item from the TreeView
+                    parentTreeItem.getChildren().remove(treeItem);
+
+                    // After removing, check if the parent should now be marked as complete
+                    updateParentCompletion(parentTreeItem);
+                    goalsTreeView.refresh();
+
+                    updateGoalsProgress();
+                }
+            });
+
+            addSubGoalButton.setOnAction(event -> {
+                if (getTreeItem() != null) {
+                    Note.Goal parentGoal = getItem();
+
+                    // If parent was completed, un-complete it since we're adding a new task
+                    if (parentGoal.isCompleted()) {
+                        parentGoal.setCompleted(false);
+                        // Also need to update grandparents
+                        updateParentCompletion(getTreeItem());
+                    }
+
+                    Note.Goal newSubGoal = new Note.Goal("New Sub-goal");
+                    parentGoal.addSubGoal(newSubGoal); // Update model
+
+                    TreeItem<Note.Goal> newTreeItem = new TreeItem<>(newSubGoal); // Create UI item
+                    getTreeItem().getChildren().add(newTreeItem); // Add to UI tree
+                    getTreeItem().setExpanded(true);
+
+                    goalsTreeView.refresh();
+                    updateGoalsProgress();
+                }
+            });
+
+            HBox.setHgrow(checkBox, Priority.ALWAYS);
+            hbox.getChildren().addAll(checkBox, addSubGoalButton, deleteButton);
+        }
+
+        @Override
+        public void startEdit() {
+            super.startEdit();
+            if (getItem() == null) {
+                return;
+            }
+            if (editField == null) {
+                createTextField();
+            }
+            editField.setText(getItem().getDescription());
+            setGraphic(editField);
+            setText(null);
+            editField.selectAll();
+            editField.requestFocus();
+        }
+
+        @Override
+        public void cancelEdit() {
+            super.cancelEdit();
+            setGraphic(hbox);
+            setText(null);
+        }
+
+        @Override
+        protected void updateItem(Note.Goal item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty || item == null) {
+                setGraphic(null);
+                setText(null);
+            } else {
+                if (isEditing()) {
+                    if (editField != null) {
+                        editField.setText(item.getDescription());
+                    }
+                    setGraphic(editField);
+                    setText(null);
+                } else {
+                    checkBox.setText(item.getDescription());
+                    checkBox.setSelected(item.isCompleted());
+                    setGraphic(hbox);
+                    setText(null);
+                }
+            }
+        }
+
+        private void createTextField() {
+            editField = new TextField();
+            editField.setOnKeyPressed(event -> {
+                if (event.getCode() == KeyCode.ENTER) {
+                    getItem().setDescription(editField.getText());
+                    commitEdit(getItem());
+                } else if (event.getCode() == KeyCode.ESCAPE) {
+                    cancelEdit();
+                }
+            });
+            editField.focusedProperty().addListener((obs, wasFocused, isNowFocused) -> {
+                if (wasFocused && !isNowFocused) {
+                    getItem().setDescription(editField.getText());
+                    commitEdit(getItem());
+                }
+            });
+        }
     }
 }

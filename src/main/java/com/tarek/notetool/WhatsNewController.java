@@ -28,10 +28,13 @@ public class WhatsNewController {
         headerLabel.setText("What's New in v" + VersionInfo.CURRENT_VERSION);
 
         List<String> changes = List.of(
-                "✨ Auto-Focus for Dialogs: Input fields are now automatically focused when dialogs open, so you can start typing immediately.",
-                "✨ Unsaved Changes Confirmation: The app will now warn you if you try to close an editor with unsaved changes, preventing accidental data loss.",
-                "✨ Improved Purple Theme: The purple accent color is now applied more consistently across all buttons and UI elements.",
-                "✨ 'What's New' Dialog: You're looking at it! This dialog will now appear on startup after an update to highlight new features."
+                "✨ Hierarchical Goals: Break down complex tasks with nested sub-goals in a new tree view.",
+                "✨ Smart Goal Completion: Parent goals automatically complete when all sub-goals are done. Checking a parent also completes all its children.",
+                "✨ Column Sorting: Instantly sort notes within a column by Priority, Due Date, or Title.",
+                "✨ Automatic User Assignment: New and duplicated notes are now automatically assigned to the current user.",
+                "✨ Quick Reordering: Use the new 'Move to Top/Bottom' context menu option to organize notes faster.",
+                "✨ Clear Completed Goals: A new button in the note editor helps you clean up your task list with a single click.",
+                "✨ Robust Editor: The note editor has been refactored to be more resilient against build and caching issues."
         );
 
         changesListView.setItems(FXCollections.observableArrayList(changes));

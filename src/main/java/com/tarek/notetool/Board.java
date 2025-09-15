@@ -2,6 +2,7 @@ package com.tarek.notetool;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -146,6 +147,18 @@ public class Board {
             allNotes.addAll(notesInColumn);
         }
         return Collections.unmodifiableList(allNotes);
+    }
+
+    /**
+     * Sorts the notes within a specific column using the given comparator.
+     * @param status The status of the column to sort.
+     * @param comparator The comparator to define the sort order.
+     */
+    public void sortColumn(Note.Status status, Comparator<Note> comparator) {
+        List<Note> notesInColumn = columns.get(status);
+        if (notesInColumn != null) {
+            notesInColumn.sort(comparator);
+        }
     }
 
     /**

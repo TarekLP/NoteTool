@@ -9,6 +9,7 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.geometry.Pos;
 import javafx.geometry.Insets;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
@@ -20,6 +21,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Menu;
 import javafx.scene.input.KeyCombination;
@@ -39,6 +41,8 @@ import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.image.WritableImage;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.paint.Color;
 import javafx.scene.layout.VBox;
@@ -50,6 +54,7 @@ import javafx.util.Pair;
 import javafx.stage.FileChooser;
 
 import java.io.IOException;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.Map;
@@ -67,6 +72,7 @@ import org.kordamp.ikonli.materialdesign2.MaterialDesignA;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignD;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignF;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignS;
 
 public class MainViewController {
 
@@ -334,10 +340,45 @@ public class MainViewController {
     private VBox createColumn(Note.Status status) {
         // Column Header
         int noteCount = currentBoard.getNotesInColumn(status).size();
+
+        // --- NEW: Header HBox ---
+        HBox columnHeader = new HBox();
+        columnHeader.setSpacing(5);
+        columnHeader.setAlignment(Pos.CENTER_LEFT);
+
         Label titleLabel = new Label(status.toString() + " (" + noteCount + ")");
         titleLabel.setFont(new Font("System Bold", 16));
-        titleLabel.setPadding(new Insets(5));
 
+        // Only add sort button for non-archived columns
+        if (status != Note.Status.ARCHIVED) {
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+            MenuButton sortButton = new MenuButton();
+            sortButton.setGraphic(new FontIcon(MaterialDesignS.SORT));
+            Tooltip.install(sortButton, new Tooltip("Sort Column"));
+            sortButton.getStyleClass().add("rich-text-editor-button"); // Use a flat button style
+
+            // Comparators
+            Comparator<Note> byPriority = Comparator.comparing(Note::getPriority).reversed();
+            Comparator<Note> byDueDate = Comparator.comparing(Note::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()));
+            Comparator<Note> byTitle = Comparator.comparing(Note::getTitle, String.CASE_INSENSITIVE_ORDER);
+
+            MenuItem sortByPriority = new MenuItem("By Priority (High to Low)");
+            sortByPriority.setOnAction(e -> handleSortColumn(status, byPriority));
+
+            MenuItem sortByDueDate = new MenuItem("By Due Date (Soonest First)");
+            sortByDueDate.setOnAction(e -> handleSortColumn(status, byDueDate));
+
+            MenuItem sortByTitle = new MenuItem("By Title (A-Z)");
+            sortByTitle.setOnAction(e -> handleSortColumn(status, byTitle));
+
+            sortButton.getItems().addAll(sortByPriority, sortByDueDate, sortByTitle);
+            columnHeader.getChildren().addAll(titleLabel, spacer, sortButton);
+        } else {
+            // For archived, just add the label
+            columnHeader.getChildren().add(titleLabel);
+        }
         // VBox for notes
         VBox notesContainer = new VBox(5);
         noteContainersMap.put(status, notesContainer);
@@ -349,7 +390,7 @@ public class MainViewController {
         });
 
         // Assemble the column
-        VBox columnVBox = new VBox(10, titleLabel, notesContainer);
+        VBox columnVBox = new VBox(10, columnHeader, notesContainer);
 
         // Only add the "Add Note" button for non-archived columns
         if (status != Note.Status.ARCHIVED) {
@@ -408,11 +449,19 @@ public class MainViewController {
             VBox notesContainer = noteContainersMap.get(status);
             if (notesContainer != null && notesContainer.getParent() instanceof VBox) {
                 VBox columnVBox = (VBox) notesContainer.getParent();
-                // The title label is expected to be the first child of the column VBox.
-                if (!columnVBox.getChildren().isEmpty() && columnVBox.getChildren().get(0) instanceof Label) {
-                    Label titleLabel = (Label) columnVBox.getChildren().get(0);
-                    int noteCount = currentBoard.getNotesInColumn(status).size();
-                    titleLabel.setText(status.toString() + " (" + noteCount + ")");
+                // The header is now an HBox, which is the first child.
+                if (!columnVBox.getChildren().isEmpty() && columnVBox.getChildren().get(0) instanceof HBox) {
+                    HBox headerBox = (HBox) columnVBox.getChildren().get(0);
+                    // Find the Label within the HBox
+                    Optional<Node> titleLabelOpt = headerBox.getChildren().stream()
+                            .filter(node -> node instanceof Label)
+                            .findFirst();
+
+                    titleLabelOpt.ifPresent(node -> {
+                        Label titleLabel = (Label) node;
+                        int noteCount = currentBoard.getNotesInColumn(status).size();
+                        titleLabel.setText(status.toString() + " (" + noteCount + ")");
+                    });
                 }
             }
         }
@@ -524,6 +573,19 @@ public class MainViewController {
      */
     private void setupCardContextMenu(VBox card, Note note) {
         ContextMenu contextMenu = new ContextMenu();
+
+        MenuItem moveToTop = new MenuItem("Move to Top");
+        moveToTop.setGraphic(new FontIcon(MaterialDesignA.ARROW_UP_BOLD_BOX_OUTLINE));
+        moveToTop.setOnAction(e -> handleReorderNote(note.getId(), note.getStatus(), 0));
+
+        MenuItem moveToBottom = new MenuItem("Move to Bottom");
+        moveToBottom.setGraphic(new FontIcon(MaterialDesignA.ARROW_DOWN_BOLD_BOX_OUTLINE));
+        moveToBottom.setOnAction(e -> {
+            VBox container = noteContainersMap.get(note.getStatus());
+            // The reorder logic will handle adjusting the index if the item is already in the list.
+            handleReorderNote(note.getId(), note.getStatus(), container.getChildren().size());
+        });
+
         Menu moveMenu = new Menu("Move to");
         moveMenu.setGraphic(new FontIcon(MaterialDesignF.FOLDER_MOVE_OUTLINE));
         for (Note.Status newStatus : Note.Status.values()) {
@@ -543,7 +605,8 @@ public class MainViewController {
         MenuItem deleteItem = new MenuItem("Delete");
         deleteItem.setGraphic(new FontIcon(MaterialDesignD.DELETE_OUTLINE));
         deleteItem.setOnAction(e -> handleDeleteNote(note));
-        contextMenu.getItems().addAll(duplicateItem, moveMenu, new SeparatorMenuItem(), deleteItem);
+        contextMenu.getItems().addAll(moveToTop, moveToBottom, new SeparatorMenuItem(),
+                duplicateItem, moveMenu, new SeparatorMenuItem(), deleteItem);
         card.setOnContextMenuRequested(e -> contextMenu.show(card, e.getScreenX(), e.getScreenY()));
     }
 
@@ -661,6 +724,12 @@ public class MainViewController {
         result.ifPresent(title -> {
             Note newNote = new Note(title, ""); // Content is empty for new notes
             newNote.setStatus(status);
+
+            // Automatically assign the current user to the new note
+            if (noteManager.getCurrentUser() != null) {
+                newNote.setAssignees(List.of(noteManager.getCurrentUser()));
+            }
+
             currentBoard.addNote(newNote);
             noteManager.markAsDirty();
 
@@ -743,7 +812,7 @@ public class MainViewController {
                 .filter(s -> s != Note.Status.ARCHIVED)
                 .collect(Collectors.toList());
         statusComboBox.setItems(FXCollections.observableArrayList(creatableStatuses));
-        statusComboBox.setValue(Note.Status.TODO); // Default to TODO
+        statusComboBox.setValue(Note.Status.TODO);
 
         grid.add(new Label("Title:"), 0, 0);
         grid.add(titleField, 1, 0);
@@ -781,6 +850,12 @@ public class MainViewController {
             noteManager.getBoard(result.boardName()).ifPresent(board -> {
                 Note newNote = new Note(result.title(), "");
                 newNote.setStatus(result.status());
+
+                // Automatically assign the current user to the new note
+                if (noteManager.getCurrentUser() != null) {
+                    newNote.setAssignees(List.of(noteManager.getCurrentUser()));
+                }
+
                 board.addNote(newNote);
                 noteManager.markAsDirty();
 
@@ -874,6 +949,17 @@ public class MainViewController {
 
     private void handleDuplicateNote(Note originalNote) {
         Note newNote = originalNote.duplicate(); // Use the dedicated duplicate method
+
+        // Add the current user as an assignee to the duplicated note, if not already present.
+        User currentUser = noteManager.getCurrentUser();
+        if (currentUser != null) {
+            List<User> assignees = new ArrayList<>(newNote.getAssignees());
+            if (!assignees.contains(currentUser)) {
+                assignees.add(currentUser);
+                newNote.setAssignees(assignees);
+            }
+        }
+
         currentBoard.addNote(newNote);
         noteManager.markAsDirty();
 
@@ -883,6 +969,42 @@ public class MainViewController {
             container.getChildren().add(createNoteCard(newNote));
         }
         updateColumnCounts();
+    }
+
+    /**
+     * Handles the sorting of a column. It sorts the underlying data model
+     * and then re-populates the UI with a staggered fade-in animation.
+     * @param status The status of the column to sort.
+     * @param comparator The comparator to use for sorting.
+     */
+    private void handleSortColumn(Note.Status status, Comparator<Note> comparator) {
+        if (currentBoard == null) {
+            return;
+        }
+
+        // 1. Sort the underlying data model
+        currentBoard.sortColumn(status, comparator);
+        noteManager.markAsDirty();
+
+        // 2. Re-populate the UI container for the sorted column
+        VBox notesContainer = noteContainersMap.get(status);
+        if (notesContainer != null) {
+            notesContainer.getChildren().clear();
+
+            List<Note> sortedNotes = currentBoard.getNotesInColumn(status);
+            for (int i = 0; i < sortedNotes.size(); i++) {
+                Note note = sortedNotes.get(i);
+                VBox noteCard = createNoteCard(note);
+
+                noteCard.setOpacity(0);
+                FadeTransition ft = new FadeTransition(Duration.millis(300), noteCard);
+                ft.setToValue(1);
+                ft.setDelay(Duration.millis(i * 50)); // Stagger the animation
+                ft.play();
+
+                notesContainer.getChildren().add(noteCard);
+            }
+        }
     }
 
     private void handleReorderNote(UUID draggedNoteId, Note.Status targetStatus, int newIndexInUI) {

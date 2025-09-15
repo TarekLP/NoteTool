@@ -67,7 +67,7 @@
             <Tab text="Goals">
                 <VBox spacing="10" style="-fx-padding: 10;">
                     <ProgressBar fx:id="goalsProgressBar" prefWidth="Infinity" />
-                    <ListView fx:id="goalsListView" VBox.vgrow="ALWAYS" />
+                    <VBox fx:id="goalsContainer" VBox.vgrow="ALWAYS" />
                     <HBox spacing="5">
                         <TextField fx:id="newGoalField" promptText="Add a new goal" HBox.hgrow="ALWAYS" />
                         <Button onAction="#handleAddGoal" text="Add" />
