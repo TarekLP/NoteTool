@@ -1,0 +1,8 @@
+/*
+ * A simple CSS override to change the application's accent color to purple.
+ * This is loaded on top of the base AtlantaFX theme.
+ */
+.root {
+    -color-accent-emphasis: #9370DB; /* MediumPurple */
+    -color-accent-fg: #8A2BE2;       /* BlueViolet */
+}

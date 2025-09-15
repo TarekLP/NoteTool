@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.Tab?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.DatePicker?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Font?>
+<BorderPane xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1"
+            style="-fx-background-color: -color-bg-default;">
+    <top>
+        <Label fx:id="headerLabel" text="Edit Note" style="-fx-padding: 20 20 0 20;">
+            <font><Font name="System Bold" size="24.0" /></font>
+        </Label>
+    </top>
+    <center>
+        <TabPane tabClosingPolicy="UNAVAILABLE" style="-fx-padding: 15 20 15 20;">
+            <Tab text="Details">
+                <content>
+                    <ScrollPane fitToWidth="true" style="-fx-background-color: transparent;">
+                        <VBox spacing="15" style="-fx-padding: 15;">
+                            <VBox spacing="5">
+                                <Label text="Title" style="-fx-font-size: 13px; -fx-font-weight: bold;"/>
+                                <TextField fx:id="titleField" />
+                            </VBox>
+
+                            <VBox spacing="5">
+                                <Label text="Priority" style="-fx-font-size: 13px; -fx-font-weight: bold;"/>
+                                <ComboBox fx:id="priorityComboBox" maxWidth="Infinity"/>
+                            </VBox>
+
+                            <VBox spacing="5">
+                                <Label text="Due Date &amp; Time" style="-fx-font-size: 13px; -fx-font-weight: bold;"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <DatePicker fx:id="dueDatePicker" HBox.hgrow="ALWAYS"/>
+                                    <ComboBox fx:id="dueHourComboBox" prefWidth="80"/>
+                                    <Label text=":"/>
+                                    <ComboBox fx:id="dueMinuteComboBox" prefWidth="80"/>
+                                    <Button onAction="#handleClearDueDate" text="X" styleClass="danger" />
+                                </HBox>
+                            </VBox>
+
+                            <VBox spacing="5">
+                                <Label text="Assignees" style="-fx-font-size: 13px; -fx-font-weight: bold;"/>
+                                <ListView fx:id="assigneeListView" prefHeight="100.0" />
+                            </VBox>
+
+                            <VBox spacing="5" VBox.vgrow="ALWAYS">
+                                <Label text="Content" style="-fx-font-size: 13px; -fx-font-weight: bold;"/>
+                                <TextArea fx:id="contentArea" wrapText="true" prefRowCount="6" VBox.vgrow="ALWAYS"/>
+                            </VBox>
+                        </VBox>
+                    </ScrollPane>
+                </content>
+            </Tab>
+            <Tab text="Goals">
+                <VBox spacing="10" style="-fx-padding: 10;">
+                    <ProgressBar fx:id="goalsProgressBar" prefWidth="Infinity" />
+                    <ListView fx:id="goalsListView" VBox.vgrow="ALWAYS" />
+                    <HBox spacing="5">
+                        <TextField fx:id="newGoalField" promptText="Add a new goal" HBox.hgrow="ALWAYS" />
+                        <Button onAction="#handleAddGoal" text="Add" />
+                    </HBox>
+                </VBox>
+            </Tab>
+            <Tab text="Comments">
+                <VBox spacing="10" style="-fx-padding: 10;">
+                    <ListView fx:id="commentsListView" VBox.vgrow="ALWAYS" />
+                    <HBox spacing="5">
+                        <TextField fx:id="newCommentField" promptText="Add a comment" HBox.hgrow="ALWAYS" />
+                        <Button onAction="#handleAddComment" text="Post" />
+                    </HBox>
+                </VBox>
+            </Tab>
+        </TabPane>
+    </center>
+    <bottom>
+        <HBox spacing="10" alignment="CENTER_RIGHT" style="-fx-padding: 0 20 20 20;">
+            <Button text="Save" onAction="#handleSave" styleClass="success" />
+            <Button text="Cancel" onAction="#handleCancel" />
+        </HBox>
+    </bottom>
+</BorderPane>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch4jConfig>
+  <dontWrapJar>false</dontWrapJar>
+  <headerType>gui</headerType>
+  <jar>${project.build.directory}/${project.build.finalName}.jar</jar>
+  <outfile>${project.build.directory}/NoteTool.exe</outfile>
+  <errTitle>NoteTool</errTitle>
+  <cmdLine></cmdLine>
+  <chdir>.</chdir>
+  <priority>normal</priority>
+  <stayAlive>false</stayAlive>
+  <restartOnCrash>false</restartOnCrash>
+  <manifest></manifest>
+  <icon>src/main/resources/com/tarek/notetool/assets/icon.ico</icon>
+  <jre>
+    <path>./jre</path>
+    <minVersion>17.0.0</minVersion>
+    <jdkPreference>preferJre</jdkPreference>
+  </jre>
+  <!-- Force the creation of a 64-bit executable to resolve "machine type" errors. -->
+  <!-- This requires a 64-bit JRE to be bundled with the application. -->
+  <platform>windows64</platform>
+</launch4jConfig>

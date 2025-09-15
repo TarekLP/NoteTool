@@ -1,0 +1,97 @@
+/* General Styling */
+.column-vbox {
+    -fx-background-color: #161b22;
+    -fx-background-radius: 8;
+    -fx-border-color: #30363d;
+    -fx-border-radius: 8;
+    -fx-border-width: 1px;
+}
+
+.column-vbox-drag-over {
+    -fx-background-color: #388bfd26;
+    -fx-border-color: #58a6ff;
+}
+
+/* Note Card Styling */
+.note-card {
+    -fx-background-color: #0d1117;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-border-width: 1px;
+    -fx-border-color: #21262d;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 5, 0, 0, 2);
+}
+
+.note-card:hover {
+    -fx-border-color: #58a6ff;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 10, 0, 0, 3);
+}
+
+/* Priority Borders */
+.note-card-priority-low {
+    -fx-border-color: transparent transparent transparent #3fb950;
+    -fx-border-width: 1px 1px 1px 5px;
+}
+.note-card-priority-medium {
+    -fx-border-color: transparent transparent transparent #d29922;
+    -fx-border-width: 1px 1px 1px 5px;
+}
+.note-card-priority-high {
+    -fx-border-color: transparent transparent transparent #f85149;
+    -fx-border-width: 1px 1px 1px 5px;
+}
+.note-card-priority-urgent {
+    -fx-border-color: transparent transparent transparent #da3633;
+    -fx-border-width: 1px 1px 1px 5px;
+}
+
+.note-card-overdue {
+    -fx-background-color: #f851491a;
+    -fx-border-color: #f85149;
+    -fx-border-width: 1px;
+}
+
+/* Drag and Drop Indicators */
+.note-card-drop-above {
+    -fx-border-color: #58a6ff;
+    -fx-border-width: 2px 0 0 0;
+    -fx-border-insets: -1;
+}
+
+.note-card-drop-below {
+    -fx-border-color: #58a6ff;
+    -fx-border-width: 0 0 2px 0;
+    -fx-border-insets: -1;
+}
+
+/* Tag Styling */
+.tag-label {
+    -fx-background-color: #388bfd26;
+    -fx-text-fill: #58a6ff;
+    -fx-padding: 1px 5px;
+    -fx-font-size: 9px;
+    -fx-background-radius: 4px;
+    -fx-font-weight: bold;
+}
+
+.tag-view {
+    -fx-background-color: #1f6feb;
+    -fx-padding: 2px 4px 2px 8px;
+    -fx-background-radius: 6px;
+    -fx-alignment: center-left;
+}
+.tag-view .label {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+.tag-remove-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 11px;
+    -fx-padding: 0 4px;
+    -fx-cursor: hand;
+}
+.tag-remove-button:hover {
+    -fx-background-color: #da3633;
+}

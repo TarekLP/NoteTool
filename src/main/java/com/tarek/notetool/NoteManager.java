@@ -1,0 +1,388 @@
+package com.tarek.notetool;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.TypeAdapter;
+import com.google.gson.reflect.TypeToken;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+import com.google.gson.stream.JsonWriter;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.lang.reflect.Type;
+import java.time.LocalDateTime;
+import java.util.Deque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * Manages a collection of boards. This is the top-level container for the application state.
+ */
+public class NoteManager {
+
+    private final Map<String, Board> boards;
+    private final Deque<UUID> recentNoteIds;
+    private User currentUser;
+    private final Set<String> allTags;
+    private transient boolean isDirty = false;
+
+    private static final int MAX_RECENT_NOTES = 10;
+
+    public static class NoteBoardPair {
+        public final Note note;
+        public final Board board;
+
+        public NoteBoardPair(Note note, Board board) {
+            this.note = note;
+            this.board = board;
+        }
+    }
+
+    public NoteManager() {
+        this.boards = new HashMap<>();
+        this.recentNoteIds = new LinkedList<>();
+        this.currentUser = new User("Default User");
+        this.allTags = new HashSet<>();
+    }
+
+    public void markAsDirty() {
+        this.isDirty = true;
+    }
+
+    public boolean isDirty() {
+        return isDirty;
+    }
+
+    public User getCurrentUser() {
+        return currentUser;
+    }
+
+    public void setCurrentUser(User currentUser) {
+        this.currentUser = currentUser;
+        markAsDirty();
+    }
+
+    public Set<String> getAllTags() {
+        return allTags;
+    }
+
+    public void setAllTags(Set<String> tags) {
+        this.allTags.clear();
+        this.allTags.addAll(tags);
+        markAsDirty();
+    }
+
+    /**
+     * Creates a new board and adds it to the manager.
+     * @param boardName The name of the new board.
+     * @return The newly created Board.
+     * @throws IllegalArgumentException if the board name is invalid or a board with that name already exists.
+     */
+    public Board createBoard(String boardName, List<User> members) {
+        if (boardName == null || boardName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Board name cannot be null or empty.");
+        }
+        if (boards.containsKey(boardName)) {
+            throw new IllegalArgumentException("A board with the name '" + boardName + "' already exists.");
+        }
+        Board newBoard = new Board(boardName, members);
+        boards.put(boardName, newBoard);
+        markAsDirty();
+        return newBoard;
+    }
+
+    /**
+     * Retrieves a board by its name.
+     * @param boardName The name of the board to retrieve.
+     * @return An Optional containing the board if found, otherwise an empty Optional.
+     */
+    public Optional<Board> getBoard(String boardName) {
+        return Optional.ofNullable(boards.get(boardName));
+    }
+
+    /**
+     * Removes a board from the manager.
+     * @param boardName The name of the board to remove.
+     * @return true if the board was found and removed, false otherwise.
+     */
+    public boolean removeBoard(String boardName) {
+        Board removedBoard = boards.remove(boardName);
+        if (removedBoard != null) {
+            // Clean up any references to notes from the deleted board in the recent notes list.
+            Set<UUID> notesFromRemovedBoard = removedBoard.getAllNotes().stream()
+                    .map(Note::getId)
+                    .collect(Collectors.toSet());
+            recentNoteIds.removeAll(notesFromRemovedBoard);
+            markAsDirty();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Duplicates a board and all its notes.
+     * @param originalBoardName The name of the board to duplicate.
+     * @return The newly created board.
+     * @throws IllegalArgumentException if the original board does not exist.
+     */
+    public Board duplicateBoard(String originalBoardName) {
+        Board originalBoard = getBoard(originalBoardName)
+                .orElseThrow(() -> new IllegalArgumentException("Board '" + originalBoardName + "' not found."));
+
+        // Find a unique name for the new board
+        String newBoardName = originalBoardName + " (Copy)";
+        int copyIndex = 2;
+        while (boards.containsKey(newBoardName)) {
+            newBoardName = originalBoardName + " (Copy " + copyIndex++ + ")";
+        }
+
+        // Create the new board with the same members
+        Board newBoard = new Board(newBoardName, originalBoard.getMembers());
+
+        // Duplicate all notes from the original board to the new one
+        for (Note originalNote : originalBoard.getAllNotes()) {
+            Note newNote = originalNote.duplicate();
+            newBoard.addNote(newNote);
+        }
+
+        boards.put(newBoardName, newBoard);
+        markAsDirty();
+        return newBoard;
+    }
+
+    /**
+     * Gets an unmodifiable set of all board names.
+     * @return An unmodifiable set of board names.
+     */
+    public Set<String> getBoardNames() {
+        return Collections.unmodifiableSet(boards.keySet());
+    }
+
+    /**
+     * A convenience method to find a note across all boards.
+     * This could be slow if there are many boards and notes.
+     * @param noteId The ID of the note to find.
+     * @return An Optional containing the note if found, otherwise an empty Optional.
+     */
+    public Optional<Note> findNoteAcrossAllBoards(UUID noteId) {
+        for (Board board : boards.values()) {
+            Optional<Note> note = board.findNoteById(noteId);
+            if (note.isPresent()) {
+                return note;
+            }
+        }
+        return Optional.empty();
+    }
+
+    public Optional<NoteBoardPair> findNoteAndBoard(UUID noteId) {
+        for (Board board : boards.values()) {
+            Optional<Note> noteOpt = board.findNoteById(noteId);
+            if (noteOpt.isPresent()) {
+                return Optional.of(new NoteBoardPair(noteOpt.get(), board));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Searches for notes across all boards based on a query string.
+     * The search is case-insensitive and checks note titles and content.
+     * @param query The search term.
+     * @return A map where each key is a matching Note and the value is the Board it belongs to.
+     */
+    public Map<Note, Board> searchAllNotes(String query) {
+        Map<Note, Board> results = new HashMap<>();
+        if (query == null || query.trim().isEmpty()) {
+            return results;
+        }
+        String lowerCaseQuery = query.toLowerCase();
+
+        for (Board board : boards.values()) {
+            for (Note note : board.getAllNotes()) {
+                if (note.getTitle().toLowerCase().contains(lowerCaseQuery) ||
+                    note.getContent().toLowerCase().contains(lowerCaseQuery)) {
+                    results.put(note, board);
+                }
+            }
+        }
+        return results;
+    }
+
+    public void recordNoteAccess(UUID noteId) {
+        if (noteId == null) {
+            return;
+        }
+        // Remove if it exists to move it to the front
+        recentNoteIds.remove(noteId);
+        // Add to the front
+        recentNoteIds.addFirst(noteId);
+        // Trim the list if it's too long
+        while (recentNoteIds.size() > MAX_RECENT_NOTES) {
+            recentNoteIds.removeLast();
+        }
+        markAsDirty();
+    }
+
+    public List<NoteBoardPair> getRecentNotes() {
+        List<NoteBoardPair> recentNotes = new ArrayList<>();
+        for (UUID noteId : recentNoteIds) {
+            findNoteAndBoard(noteId).ifPresent(recentNotes::add);
+        }
+        return recentNotes;
+    }
+
+    /**
+     * Saves the current state of the NoteManager to a file.
+     * @param filePath The path to the file where the state will be saved.
+     * @throws IOException if an I/O error occurs while writing to the file.
+     */
+    public void saveToFile(String filePath) throws IOException {
+        try (Writer writer = new FileWriter(filePath)) {
+            getGson().toJson(this, writer);
+            this.isDirty = false; // Reset dirty flag on successful save
+        }
+    }
+
+    /**
+     * Loads a NoteManager state from a file.
+     * @param filePath The path to the file from which to load the state.
+     * @return The loaded NoteManager instance.
+     * @throws IOException if an I/O error occurs while reading from the file.
+     */
+    public static NoteManager loadFromFile(String filePath) throws IOException {
+        File file = new File(filePath);
+        if (!file.exists() || file.length() == 0) {
+            throw new IOException("Data file not found or is empty, a new one will be created.");
+        }
+
+        try (Reader reader = new FileReader(filePath)) {
+            NoteManager manager = getGson().fromJson(reader, NoteManager.class);
+            return manager != null ? manager : new NoteManager();
+        } catch (Exception e) {
+            // Catch broader exceptions during JSON parsing to prevent application crash on corrupt file
+            throw new IOException("Failed to parse data file. It might be corrupted. " + e.getMessage(), e);
+        }
+    }
+
+    // --- GSON Configuration ---
+
+    private static Gson getGson() {
+        return new GsonBuilder()
+                .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+                .registerTypeAdapter(Board.class, new BoardDeserializer())
+                .registerTypeAdapter(NoteManager.class, new NoteManagerDeserializer())
+                .setPrettyPrinting()
+                .enableComplexMapKeySerialization()
+                .create();
+    }
+
+    /**
+     * Custom adapter to properly serialize and deserialize LocalDateTime objects.
+     */
+    private static class LocalDateTimeAdapter extends TypeAdapter<LocalDateTime> {
+        @Override
+        public void write(JsonWriter out, LocalDateTime value) throws IOException {
+            out.value(value != null ? value.toString() : null);
+        }
+
+        @Override
+        public LocalDateTime read(JsonReader in) throws IOException {
+            if (in.peek() == JsonToken.NULL) {
+                in.nextNull();
+                return null;
+            }
+            return LocalDateTime.parse(in.nextString());
+        }
+    }
+
+    /**
+     * Custom deserializer for Board to correctly initialize the final 'columns' field as an EnumMap.
+     */
+    private static class BoardDeserializer implements JsonDeserializer<Board> {
+        @Override
+        public Board deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            JsonObject jsonObject = json.getAsJsonObject();
+
+            String name = jsonObject.get("name").getAsString();
+            Type userListType = new TypeToken<List<User>>() {}.getType();
+            List<User> members = context.deserialize(jsonObject.get("members"), userListType);
+
+            Board board = new Board(name, members != null ? members : new ArrayList<>());
+
+            if (jsonObject.has("columns")) {
+                Type columnMapType = new TypeToken<Map<Note.Status, List<Note>>>() {}.getType();
+                Map<Note.Status, List<Note>> deserializedColumns = context.deserialize(jsonObject.get("columns"), columnMapType);
+
+                if (deserializedColumns != null) {
+                    deserializedColumns.values().stream()
+                        .flatMap(List::stream)
+                        .forEach(board::addNote);
+                }
+            }
+            return board;
+        }
+    }
+
+    /**
+     * Custom deserializer for NoteManager to correctly initialize final collection fields.
+     */
+    private static class NoteManagerDeserializer implements JsonDeserializer<NoteManager> {
+        @Override
+        public NoteManager deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            NoteManager manager = new NoteManager();
+            JsonObject jsonObject = json.getAsJsonObject();
+
+            if (jsonObject.has("boards")) {
+                Type boardMapType = new TypeToken<Map<String, Board>>() {}.getType();
+                Map<String, Board> deserializedBoards = context.deserialize(jsonObject.get("boards"), boardMapType);
+                if (deserializedBoards != null) {
+                    manager.boards.putAll(deserializedBoards);
+                }
+            }
+
+            if (jsonObject.has("recentNoteIds")) {
+                Type uuidListType = new TypeToken<List<UUID>>() {}.getType();
+                List<UUID> deserializedIds = context.deserialize(jsonObject.get("recentNoteIds"), uuidListType);
+                if (deserializedIds != null) {
+                    manager.recentNoteIds.addAll(deserializedIds);
+                }
+            }
+
+            if (jsonObject.has("allTags")) {
+                Type stringSetType = new TypeToken<Set<String>>() {}.getType();
+                Set<String> deserializedTags = context.deserialize(jsonObject.get("allTags"), stringSetType);
+                if (deserializedTags != null) {
+                    manager.allTags.addAll(deserializedTags);
+                }
+            }
+
+            if (jsonObject.has("currentUser")) {
+                User user = context.deserialize(jsonObject.get("currentUser"), User.class);
+                if (user != null) {
+                    manager.setCurrentUser(user);
+                }
+            }
+
+            return manager;
+        }
+    }
+}
