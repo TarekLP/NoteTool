@@ -20,6 +20,9 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
 import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.stream.Stream;
 import java.time.LocalDateTime;
 import java.util.Deque;
 import java.util.ArrayList;
@@ -251,19 +254,26 @@ public class NoteManager {
     }
 
     /**
-     * Saves the current state of the NoteManager to a file.
+     * Saves the entire current state of the NoteManager to a single file for export.
      * @param filePath The path to the file where the state will be saved.
      * @throws IOException if an I/O error occurs while writing to the file.
      */
     public void saveToFile(String filePath) throws IOException {
+        // Use a Gson instance configured for exporting the entire object graph.
+        Gson exportGson = new GsonBuilder()
+                .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+                .setPrettyPrinting()
+                .enableComplexMapKeySerialization()
+                .create();
+
         try (Writer writer = new FileWriter(filePath)) {
-            getGson().toJson(this, writer);
-            this.isDirty = false; // Reset dirty flag on successful save
+            exportGson.toJson(this, writer);
+            // Note: We don't reset the dirty flag for an export operation.
         }
     }
 
     /**
-     * Loads a NoteManager state from a file.
+     * Loads a NoteManager state from a single file for import, creating a new manager instance.
      * @param filePath The path to the file from which to load the state.
      * @return The loaded NoteManager instance.
      * @throws IOException if an I/O error occurs while reading from the file.
@@ -274,13 +284,123 @@ public class NoteManager {
             throw new IOException("Data file not found or is empty, a new one will be created.");
         }
 
+        // Use a Gson instance specifically for importing, which requires all deserializers.
+        Gson importGson = new GsonBuilder()
+                .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+                .registerTypeAdapter(Board.class, new BoardDeserializer())
+                .registerTypeAdapter(NoteManager.class, new NoteManagerDeserializer())
+                .setPrettyPrinting()
+                .enableComplexMapKeySerialization()
+                .create();
+
         try (Reader reader = new FileReader(filePath)) {
-            NoteManager manager = getGson().fromJson(reader, NoteManager.class);
+            NoteManager manager = importGson.fromJson(reader, NoteManager.class);
             return manager != null ? manager : new NoteManager();
         } catch (Exception e) {
             // Catch broader exceptions during JSON parsing to prevent application crash on corrupt file
             throw new IOException("Failed to parse data file. It might be corrupted. " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Saves the current state of the NoteManager to a directory for persistence.
+     * Preferences are saved in 'preferences.json'.
+     * Each board is saved as a separate '[board-name].json' file in a 'boards' subdirectory.
+     * @param dataDirectory The path to the directory where the state will be saved.
+     * @throws IOException if an I/O error occurs while writing to the files.
+     */
+    public void saveToDirectory(Path dataDirectory) throws IOException {
+        Gson gson = getGson();
+
+        // 1. Save settings (currentUser, allTags, recentNoteIds) to preferences.json
+        Path settingsFile = dataDirectory.resolve("preferences.json");
+        NoteManagerSettings settings = new NoteManagerSettings();
+        settings.currentUser = this.currentUser;
+        settings.allTags = this.allTags;
+        settings.recentNoteIds = this.recentNoteIds;
+
+        try (Writer writer = new FileWriter(settingsFile.toFile())) {
+            gson.toJson(settings, writer);
+        }
+
+        // 2. Save each board to its own file in a 'boards' subdirectory
+        Path boardsDir = dataDirectory.resolve("boards");
+        if (!Files.exists(boardsDir)) {
+            Files.createDirectories(boardsDir);
+        }
+
+        Set<Path> savedBoardFiles = new HashSet<>();
+        for (Board board : boards.values()) {
+            // Sanitize board name to create a valid filename.
+            String fileName = board.getName().replaceAll("[^a-zA-Z0-9.\\-]", "_") + ".json";
+            Path boardFile = boardsDir.resolve(fileName);
+            savedBoardFiles.add(boardFile);
+            try (Writer writer = new FileWriter(boardFile.toFile())) {
+                gson.toJson(board, writer);
+            }
+        }
+
+        // 3. Delete obsolete board files for boards that were renamed or deleted
+        if (Files.exists(boardsDir)) {
+            try (Stream<Path> stream = Files.list(boardsDir)) {
+                stream.filter(file -> file.toString().endsWith(".json") && !savedBoardFiles.contains(file))
+                        .forEach(file -> {
+                            try {
+                                Files.delete(file);
+                                System.out.println("Deleted obsolete board file: " + file);
+                            } catch (IOException e) {
+                                System.err.println("Failed to delete obsolete board file: " + file);
+                            }
+                        });
+            }
+        }
+
+        this.isDirty = false; // Reset dirty flag on successful save
+    }
+
+    /**
+     * Loads a NoteManager state from a directory structure for persistence.
+     * @param dataDirectory The path to the directory from which to load the state.
+     * @return The loaded NoteManager instance.
+     * @throws IOException if a critical I/O error occurs.
+     */
+    public static NoteManager loadFromDirectory(Path dataDirectory) throws IOException {
+        Gson gson = getGson();
+        NoteManager manager = new NoteManager();
+
+        // 1. Load settings from preferences.json
+        Path settingsFile = dataDirectory.resolve("preferences.json");
+        if (Files.exists(settingsFile)) {
+            try (Reader reader = new FileReader(settingsFile.toFile())) {
+                NoteManagerSettings settings = gson.fromJson(reader, NoteManagerSettings.class);
+                if (settings != null) {
+                    if (settings.currentUser != null) manager.setCurrentUser(settings.currentUser);
+                    if (settings.allTags != null) manager.allTags.addAll(settings.allTags);
+                    if (settings.recentNoteIds != null) manager.recentNoteIds.addAll(settings.recentNoteIds);
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to parse preferences.json, using defaults. " + e.getMessage());
+            }
+        }
+
+        // 2. Load boards from 'boards' subdirectory
+        Path boardsDir = dataDirectory.resolve("boards");
+        if (Files.exists(boardsDir) && Files.isDirectory(boardsDir)) {
+            try (Stream<Path> stream = Files.list(boardsDir)) {
+                stream.filter(file -> file.toString().endsWith(".json"))
+                        .forEach(boardFile -> {
+                            try (Reader reader = new FileReader(boardFile.toFile())) {
+                                Board board = gson.fromJson(reader, Board.class);
+                                if (board != null && board.getName() != null) {
+                                    manager.boards.put(board.getName(), board);
+                                }
+                            } catch (Exception e) {
+                                System.err.println("Failed to load or parse board file: " + boardFile + ". " + e.getMessage());
+                            }
+                        });
+            }
+        }
+        return manager;
     }
 
     // --- GSON Configuration ---
@@ -289,7 +409,6 @@ public class NoteManager {
         return new GsonBuilder()
                 .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
                 .registerTypeAdapter(Board.class, new BoardDeserializer())
-                .registerTypeAdapter(NoteManager.class, new NoteManagerDeserializer())
                 .setPrettyPrinting()
                 .enableComplexMapKeySerialization()
                 .create();
@@ -384,5 +503,12 @@ public class NoteManager {
 
             return manager;
         }
+    }
+
+    // This class is a simple container for serializing/deserializing settings.
+    private static class NoteManagerSettings {
+        User currentUser;
+        Set<String> allTags;
+        Deque<UUID> recentNoteIds;
     }
 }
