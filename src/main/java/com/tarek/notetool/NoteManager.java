@@ -46,6 +46,7 @@ public class NoteManager {
     private final Deque<UUID> recentNoteIds;
     private User currentUser;
     private final Set<String> allTags;
+    private final List<String> galleryImagePaths;
     private transient boolean isDirty = false;
 
     private static final int MAX_RECENT_NOTES = 10;
@@ -65,6 +66,7 @@ public class NoteManager {
         this.recentNoteIds = new LinkedList<>();
         this.currentUser = new User("Default User");
         this.allTags = new HashSet<>();
+        this.galleryImagePaths = new ArrayList<>();
     }
 
     public void markAsDirty() {
@@ -92,6 +94,31 @@ public class NoteManager {
         this.allTags.clear();
         this.allTags.addAll(tags);
         markAsDirty();
+    }
+
+    /**
+     * Gets an unmodifiable list of all image paths in the global gallery.
+     * @return An unmodifiable list of image paths.
+     */
+    public List<String> getGalleryImagePaths() {
+        return Collections.unmodifiableList(galleryImagePaths);
+    }
+
+    /**
+     * Adds a new image path to the global gallery.
+     * @param imagePath The file name of the image to add.
+     */
+    public void addGalleryImagePath(String imagePath) {
+        if (imagePath != null && !imagePath.trim().isEmpty() && !this.galleryImagePaths.contains(imagePath)) {
+            this.galleryImagePaths.add(imagePath);
+            markAsDirty();
+        }
+    }
+
+    public void removeGalleryImagePath(String imagePath) {
+        if (this.galleryImagePaths.remove(imagePath)) {
+            markAsDirty();
+        }
     }
 
     /**
@@ -170,6 +197,26 @@ public class NoteManager {
         boards.put(newBoardName, newBoard);
         markAsDirty();
         return newBoard;
+    }
+
+    /**
+     * Finds all notes that have a given image file as a reference.
+     * @param imageFileName The name of the image file in the gallery.
+     * @return A list of notes that use the image.
+     */
+    public List<Note> getNotesUsingImage(String imageFileName) {
+        if (imageFileName == null || imageFileName.isBlank()) {
+            return Collections.emptyList();
+        }
+        List<Note> usingNotes = new ArrayList<>();
+        for (Board board : boards.values()) {
+            for (Note note : board.getAllNotes()) {
+                if (note.getReferenceImagePaths().contains(imageFileName)) {
+                    usingNotes.add(note);
+                }
+            }
+        }
+        return usingNotes;
     }
 
     /**
@@ -318,6 +365,7 @@ public class NoteManager {
         settings.currentUser = this.currentUser;
         settings.allTags = this.allTags;
         settings.recentNoteIds = this.recentNoteIds;
+        settings.galleryImagePaths = this.galleryImagePaths;
 
         try (Writer writer = new FileWriter(settingsFile.toFile())) {
             gson.toJson(settings, writer);
@@ -377,6 +425,7 @@ public class NoteManager {
                     if (settings.currentUser != null) manager.setCurrentUser(settings.currentUser);
                     if (settings.allTags != null) manager.allTags.addAll(settings.allTags);
                     if (settings.recentNoteIds != null) manager.recentNoteIds.addAll(settings.recentNoteIds);
+                    if (settings.galleryImagePaths != null) manager.galleryImagePaths.addAll(settings.galleryImagePaths);
                 }
             } catch (Exception e) {
                 System.err.println("Failed to parse preferences.json, using defaults. " + e.getMessage());
@@ -510,5 +559,6 @@ public class NoteManager {
         User currentUser;
         Set<String> allTags;
         Deque<UUID> recentNoteIds;
+        List<String> galleryImagePaths;
     }
 }

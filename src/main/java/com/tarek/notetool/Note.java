@@ -193,6 +193,7 @@ public class Note {
     private Set<String> tags; // A set of labels for categorization
     private List<String> attachmentPaths; // Stores relative paths to attached files
     private List<Dependency> dependencies; // Stores relationships to other notes
+    private List<String> referenceImagePaths; // Stores paths to linked gallery images
 
     /**
      * Constructor for a new Note.
@@ -213,6 +214,7 @@ public class Note {
         this.tags = new HashSet<>();
         this.attachmentPaths = new ArrayList<>();
         this.dependencies = new ArrayList<>();
+        this.referenceImagePaths = new ArrayList<>();
     }
 
     /**
@@ -245,6 +247,7 @@ public class Note {
         this.tags = original.tags != null ? new HashSet<>(original.tags) : new HashSet<>();
         this.attachmentPaths = original.attachmentPaths != null ? new ArrayList<>(original.attachmentPaths) : new ArrayList<>();
         this.dependencies = original.dependencies != null ? new ArrayList<>(original.dependencies) : new ArrayList<>();
+        this.referenceImagePaths = original.referenceImagePaths != null ? new ArrayList<>(original.referenceImagePaths) : new ArrayList<>();
     }
 
     /**
@@ -276,6 +279,7 @@ public class Note {
         // Copy attachments and dependencies
         newNote.setAttachmentPaths(this.attachmentPaths);
         newNote.setDependencies(this.dependencies);
+        newNote.setReferenceImagePaths(this.referenceImagePaths);
 
         // Comments are intentionally not copied for a duplication action.
         return newNote;
@@ -404,6 +408,19 @@ public class Note {
         updateLastModified();
     }
 
+    public List<String> getReferenceImagePaths() {
+        if (referenceImagePaths == null) {
+            referenceImagePaths = new ArrayList<>();
+        }
+        return Collections.unmodifiableList(referenceImagePaths);
+    }
+
+    public void setReferenceImagePaths(List<String> referenceImagePaths) {
+        // Create a mutable copy to ensure the internal list cannot be modified externally
+        this.referenceImagePaths = new ArrayList<>(referenceImagePaths);
+        updateLastModified();
+    }
+
 
 
     // --- Helper Methods ---
@@ -434,6 +451,7 @@ public class Note {
         this.tags = new HashSet<>(source.tags);
         this.attachmentPaths = new ArrayList<>(source.attachmentPaths);
         this.dependencies = new ArrayList<>(source.dependencies);
+        this.referenceImagePaths = new ArrayList<>(source.referenceImagePaths);
     }
 
     private void updateLastModified() {

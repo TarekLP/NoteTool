@@ -28,11 +28,10 @@ public class WhatsNewController {
         headerLabel.setText("What's New in v" + VersionInfo.CURRENT_VERSION);
 
         List<String> changes = List.of(
-                "✨ File Attachments: You can now attach files directly to your notes! Keep all your resources in one place.",
-                "✨ Note Dependencies: Link notes together with 'Blocks', 'Blocked By', or 'Related To' relationships. Dependencies are now two-way!",
-                "✨ Visual Dependency Indicators: Note cards on the main board now show color-coded icons to indicate their dependency status at a glance (e.g., a red lock for blocked notes).",
-                "✨ @Note Linking in Goals: Quickly link to another note from the goals section by simply typing '@' followed by the note's name.",
-                "✨ Enhanced Note Model: The underlying data structure for notes has been improved to support these new features."
+                "✨ Slide-out Image Gallery: A new global panel on the right to collect reference images. Toggle it with the new image icon in the top bar.",
+                "✨ Drag-and-Drop References: Drag images from the gallery and drop them onto a note to create a visual reference.",
+                "✨ Add images to the gallery from your computer or by pasting image files from your clipboard.",
+                "✨ Note Model Update: The data model for notes has been updated to support image references."
         );
 
         changesListView.setItems(FXCollections.observableArrayList(changes));

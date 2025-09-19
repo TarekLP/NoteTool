@@ -1,6 +1,7 @@
 com\tarek\notetool\MainViewController.class
 com\tarek\notetool\Note$Priority.class
 com\tarek\notetool\MainViewController$1.class
+com\tarek\notetool\ImageGalleryViewController.class
 com\tarek\notetool\NoteDetailViewController$GoalTreeCell.class
 com\tarek\notetool\NoteManager$BoardDeserializer.class
 com\tarek\notetool\NoteManager$NoteManagerDeserializer$1.class

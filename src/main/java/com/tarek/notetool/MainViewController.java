@@ -1,6 +1,7 @@
 package com.tarek.notetool;
 
 import javafx.application.Platform;
+import javafx.animation.Interpolator;
 import javafx.collections.FXCollections;
 import javafx.animation.FadeTransition;
 import javafx.animation.TranslateTransition;
@@ -43,6 +44,7 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.paint.Color;
 import javafx.scene.layout.VBox;
@@ -72,6 +74,7 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignB;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignA;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignI;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignD;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignF;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignS;
@@ -91,6 +94,12 @@ public class MainViewController {
     private HBox columnsContainer;
 
     @FXML
+    private StackPane rootStackPane; // The new root pane from your FXML
+
+    @FXML
+    private VBox imageGalleryPane; // The VBox containing the loaded ImageGalleryView
+
+    @FXML
     private ScrollPane boardScrollPane;
 
     @FXML
@@ -106,6 +115,9 @@ public class MainViewController {
     private ToggleButton showArchivedToggle;
 
     @FXML
+    private ToggleButton imageGalleryToggle; // The button to show/hide the gallery
+
+    @FXML
     private ListView<NoteManager.NoteBoardPair> recentNotesListView;
 
     private NoteManager noteManager;
@@ -113,6 +125,7 @@ public class MainViewController {
     private final Map<Note.Status, VBox> noteContainersMap = new EnumMap<>(Note.Status.class);
     private List<User> systemUsers;
     private ChangeListener<String> boardSelectionListener;
+    private ImageGalleryViewController imageGalleryViewController;
 
     public void setNoteManager(NoteManager noteManager) {
         this.noteManager = noteManager;
@@ -140,6 +153,9 @@ public class MainViewController {
             boardTitleLabel.setText("No Boards");
             columnsContainer.getChildren().clear();
         }
+
+        // Pass the manager to the gallery controller
+        if (imageGalleryViewController != null) imageGalleryViewController.setNoteManager(noteManager);
     }
 
     @FXML
@@ -163,6 +179,12 @@ public class MainViewController {
                 displayBoard(currentBoard);
             }
         });
+
+        // Setup image gallery toggle button
+        imageGalleryToggle.setGraphic(new FontIcon(MaterialDesignI.IMAGE_MULTIPLE_OUTLINE));
+        Tooltip.install(imageGalleryToggle, new Tooltip("Toggle Image Gallery"));
+        imageGalleryToggle.setOnAction(e -> handleToggleImageGallery());
+        setupImageGallery();
 
         // Add context menu for deleting boards
         ContextMenu boardContextMenu = new ContextMenu();
@@ -227,6 +249,49 @@ public class MainViewController {
                 }
             }
         });
+    }
+
+    private void setupImageGallery() {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/tarek/notetool/ImageGalleryView.fxml"));
+            // Manually create and set controller
+            imageGalleryViewController = new ImageGalleryViewController();
+            loader.setController(imageGalleryViewController);
+            Node galleryContent = loader.load();
+
+            // Set the close handler so the gallery can ask to be closed.
+            imageGalleryViewController.setOnCloseRequestHandler(() -> {
+                if (imageGalleryToggle.isSelected()) {
+                    imageGalleryToggle.fire(); // Trigger the toggle button's action to close the panel
+                }
+            });
+
+            // Add the loaded content into the placeholder pane
+            imageGalleryPane.getChildren().add(galleryContent);
+
+            // Initially hide the gallery off-screen to the right
+            imageGalleryPane.setTranslateX(300); // Assuming gallery width is 300
+            imageGalleryPane.setVisible(false);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            showError("UI Error", "Could not load the Image Gallery component.");
+        }
+    }
+
+    private void handleToggleImageGallery() {
+        boolean show = imageGalleryToggle.isSelected();
+        TranslateTransition tt = new TranslateTransition(Duration.millis(350), imageGalleryPane);
+        tt.setInterpolator(Interpolator.EASE_BOTH);
+
+        if (show) {
+            imageGalleryPane.setVisible(true);
+            tt.setToX(0);
+        } else {
+            tt.setToX(imageGalleryPane.getWidth());
+            tt.setOnFinished(e -> imageGalleryPane.setVisible(false));
+        }
+        tt.play();
     }
 
     @FXML

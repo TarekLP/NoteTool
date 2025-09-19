@@ -37,6 +37,13 @@ public class MainApp extends Application {
     }
 
     /**
+     * Gets the path to the directory where gallery images are stored.
+     * @return The Path for the application's gallery directory.
+     */
+    public static Path getGalleryDirectory() {
+        return DATA_DIRECTORY_PATH.resolve("gallery");
+    }
+    /**
      * Determines the appropriate data storage path.
      * If a OneDrive folder is detected via environment variables, it's used as the base.
      * Otherwise, it defaults to the standard user home folder.
@@ -68,11 +75,12 @@ public class MainApp extends Application {
         // Check for data in the old format and offer to migrate it before loading anything.
         checkForAndOfferMigration();
 
-        // Ensure the attachments directory exists
+        // Ensure the data subdirectories exist
         try {
             Files.createDirectories(getAttachmentsDirectory());
+            Files.createDirectories(getGalleryDirectory());
         } catch (IOException e) {
-            System.err.println("Could not create attachments directory: " + e.getMessage());
+            System.err.println("Could not create data subdirectories: " + e.getMessage());
             // This is not fatal, so we just log it and continue.
         }
 

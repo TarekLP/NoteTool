@@ -19,6 +19,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.layout.HBox;
 import javafx.geometry.Insets;
+import javafx.scene.image.ImageView;
 import javafx.geometry.Pos;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -26,6 +27,9 @@ import javafx.scene.control.DatePicker;
 import javafx.scene.layout.Priority;
 import javafx.stage.Stage;
 import javafx.scene.layout.FlowPane;
+import javafx.scene.input.DataFormat;
+import javafx.scene.input.Dragboard;
+import javafx.scene.input.TransferMode;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
@@ -39,6 +43,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.geometry.Side;
 import javafx.scene.layout.VBox;
+import javafx.scene.image.Image;
 import javafx.stage.FileChooser;
 import javafx.util.Pair;
 import javafx.util.Duration;
@@ -125,6 +130,9 @@ public class NoteDetailViewController {
     private Button addDependencyButton;
 
     @FXML
+    private FlowPane referenceImagesFlowPane;
+
+    @FXML
     private Button copyLinkButton;
 
     private Stage dialogStage;
@@ -138,6 +146,7 @@ public class NoteDetailViewController {
     // Temporary lists to stage changes for new features
     private List<String> tempAttachmentPaths;
     private List<Note.Dependency> tempDependencies;
+    private List<String> tempReferenceImagePaths;
     
     private ContextMenu noteSuggestionsPopup;
     private UUID noteToOpen = null;
@@ -233,6 +242,11 @@ public class NoteDetailViewController {
             copyLinkButton.setGraphic(new FontIcon(MaterialDesignL.LINK));
             Tooltip.install(copyLinkButton, new Tooltip("Copy Link to Note"));
             copyLinkButton.setOnAction(e -> handleCopyLink());
+        }
+
+        // --- NEW: Reference Images Setup ---
+        if (referenceImagesFlowPane != null) {
+            setupReferencePaneDragAndDrop();
         }
     }
 
@@ -339,6 +353,12 @@ public class NoteDetailViewController {
         if (dependenciesListView != null) {
             dependenciesListView.setItems(FXCollections.observableArrayList(this.tempDependencies));
         }
+
+        // Populate reference images
+        this.tempReferenceImagePaths = new ArrayList<>(noteCopy.getReferenceImagePaths());
+        if (referenceImagesFlowPane != null) {
+            refreshReferenceImagesPane();
+        }
         // Auto-focus the title field
         Platform.runLater(titleField::requestFocus);
     }
@@ -393,6 +413,7 @@ public class NoteDetailViewController {
         // Save attachments and dependencies
         noteCopy.setAttachmentPaths(this.tempAttachmentPaths);
         noteCopy.setDependencies(this.tempDependencies);
+        noteCopy.setReferenceImagePaths(this.tempReferenceImagePaths);
 
         saved = true;
         dialogStage.close();
@@ -516,6 +537,54 @@ public class NoteDetailViewController {
             refreshTagsPane();
         });
         return tagView;
+    }
+
+    // --- Reference Image Methods ---
+
+    private void setupReferencePaneDragAndDrop() {
+        referenceImagesFlowPane.setOnDragOver(event -> {
+            // Accept the drag if it has our custom data format
+            if (event.getGestureSource() != referenceImagesFlowPane && event.getDragboard().hasContent(ImageGalleryViewController.GALLERY_IMAGE_DATA_FORMAT)) {
+                event.acceptTransferModes(TransferMode.COPY);
+            }
+            event.consume();
+        });
+
+        referenceImagesFlowPane.setOnDragDropped(event -> {
+            Dragboard db = event.getDragboard();
+            boolean success = false;
+            if (db.hasContent(ImageGalleryViewController.GALLERY_IMAGE_DATA_FORMAT)) {
+                String imageFileName = (String) db.getContent(ImageGalleryViewController.GALLERY_IMAGE_DATA_FORMAT);
+                if (!tempReferenceImagePaths.contains(imageFileName)) {
+                    tempReferenceImagePaths.add(imageFileName);
+                    refreshReferenceImagesPane();
+                }
+                success = true;
+            }
+            event.setDropCompleted(success);
+            event.consume();
+        });
+    }
+
+    private void refreshReferenceImagesPane() {
+        referenceImagesFlowPane.getChildren().clear();
+        for (String imageFileName : tempReferenceImagePaths) {
+            referenceImagesFlowPane.getChildren().add(createReferenceImageView(imageFileName));
+        }
+    }
+
+    private Node createReferenceImageView(String imageFileName) {
+        Path imagePath = MainApp.getGalleryDirectory().resolve(imageFileName);
+        Image image = new Image(imagePath.toUri().toString(), 80, 80, true, true);
+        ImageView imageView = new ImageView(image);
+
+        Button removeButton = new Button("x");
+        removeButton.getStyleClass().add("tag-remove-button");
+        removeButton.setOnAction(e -> {
+            tempReferenceImagePaths.remove(imageFileName);
+            refreshReferenceImagesPane();
+        });
+        return new VBox(5, imageView, removeButton);
     }
 
     // --- Attachment Methods ---
@@ -822,6 +891,9 @@ public class NoteDetailViewController {
 
         // Compare dependencies (order does matter for display, but for dirty checking, a set is fine)
         if (!new HashSet<>(tempDependencies).equals(new HashSet<>(initialNoteState.getDependencies()))) return true;
+
+        // Compare reference images
+        if (!new HashSet<>(tempReferenceImagePaths).equals(new HashSet<>(initialNoteState.getReferenceImagePaths()))) return true;
 
         return false;
     }
