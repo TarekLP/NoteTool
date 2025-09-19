@@ -56,6 +56,6 @@
               </VBox>
           </center>
       </BorderPane>
-      <VBox fx:id="imageGalleryPane" alignment="TOP_CENTER" maxWidth="300" style="-fx-background-color: -color-bg-overlay;" StackPane.alignment="CENTER_RIGHT" />
+      <VBox fx:id="imageGalleryPane" alignment="TOP_CENTER" maxWidth="350" style="-fx-background-color: -color-bg-overlay;" StackPane.alignment="CENTER_RIGHT" />
    </children>
 </StackPane>

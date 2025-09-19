@@ -109,7 +109,7 @@ public class MainApp extends Application {
         stage.setTitle("Note Tool");
         // Add the application icon. The .ico format is used for the launch4j executable and works here too.
         stage.getIcons().add(new Image(getClass().getResourceAsStream("/com/tarek/notetool/assets/icon.ico")));
-        Scene scene = new Scene(root, 1200, 800);
+        Scene scene = new Scene(root, 1350, 850);
 
         // Set up global shortcuts now that the scene is available
         controller.setupShortcuts(scene);

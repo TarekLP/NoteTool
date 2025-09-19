@@ -7,6 +7,8 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Button;
@@ -44,6 +46,7 @@ import javafx.scene.control.SeparatorMenuItem;
 import javafx.geometry.Side;
 import javafx.scene.layout.VBox;
 import javafx.scene.image.Image;
+import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import javafx.util.Pair;
 import javafx.util.Duration;
@@ -51,6 +54,9 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignL;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignP;
+import com.vladsch.flexmark.html.HtmlRenderer;
+import com.vladsch.flexmark.parser.Parser;
+import com.vladsch.flexmark.util.data.MutableDataSet;
 
 import java.awt.Desktop;
 import java.io.File;
@@ -81,11 +87,17 @@ public class NoteDetailViewController {
     @FXML
     private TextField titleField;
     @FXML
+    private TabPane contentTabPane;
+    @FXML
+    private Tab previewTab;
+    @FXML
+    private TextArea contentArea;
+    @FXML
+    private WebView contentPreview;
+    @FXML
     private ComboBox<Note.Priority> priorityComboBox;
     @FXML
     private DatePicker dueDatePicker;
-    @FXML
-    private TextArea contentArea;
     @FXML
     private ProgressBar goalsProgressBar;
     @FXML
@@ -150,7 +162,14 @@ public class NoteDetailViewController {
     
     private ContextMenu noteSuggestionsPopup;
     private UUID noteToOpen = null;
+    private final Parser markdownParser;
+    private final HtmlRenderer markdownRenderer;
 
+    public NoteDetailViewController() {
+        MutableDataSet options = new MutableDataSet();
+        this.markdownParser = Parser.builder(options).build();
+        this.markdownRenderer = HtmlRenderer.builder(options).build();
+    }
 
     @FXML
     private void initialize() {
@@ -247,6 +266,15 @@ public class NoteDetailViewController {
         // --- NEW: Reference Images Setup ---
         if (referenceImagesFlowPane != null) {
             setupReferencePaneDragAndDrop();
+        }
+
+        // --- NEW: Markdown Preview Setup ---
+        if (previewTab != null) {
+            previewTab.setOnSelectionChanged(event -> {
+                if (previewTab.isSelected()) {
+                    renderMarkdown();
+                }
+            });
         }
     }
 
@@ -537,6 +565,70 @@ public class NoteDetailViewController {
             refreshTagsPane();
         });
         return tagView;
+    }
+
+    private void renderMarkdown() {
+        if (contentArea == null || contentPreview == null) {
+            return;
+        }
+        String markdownText = contentArea.getText();
+        com.vladsch.flexmark.util.ast.Node document = markdownParser.parse(markdownText);
+        String rawHtml = markdownRenderer.render(document);
+
+        // This HTML uses CSS variables defined by the AtlantaFX theme, so it will adapt to light/dark mode.
+        String fullHtml = """
+            <html>
+                <head>
+                    <style>
+                        body {
+                            font-family: -apple-system, "system-ui", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+                            background-color: var(-color-bg-default, #22272e);
+                            color: var(-color-fg-default, #adbac7);
+                            line-height: 1.6;
+                        }
+                        a { color: var(-color-accent-fg, #9370DB); text-decoration: none; }
+                        a:hover { text-decoration: underline; }
+                        h1, h2, h3, h4, h5, h6 {
+                            color: var(-color-header-fg, #adbac7);
+                            border-bottom: 1px solid var(-color-border-muted, #444c56);
+                            padding-bottom: 0.3em;
+                            margin-top: 24px;
+                            margin-bottom: 16px;
+                        }
+                        code {
+                            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+                            background-color: var(-color-neutral-muted, rgba(173, 186, 199, 0.1));
+                            padding: 0.2em 0.4em;
+                            margin: 0;
+                            font-size: 85%%;
+                            border-radius: 6px;
+                        }
+                        pre {
+                            background-color: var(-color-canvas-subtle, #2d333b);
+                            padding: 16px;
+                            overflow: auto;
+                            border-radius: 6px;
+                        }
+                        pre > code { padding: 0; margin: 0; font-size: 100%%; background-color: transparent; border: 0; }
+                        blockquote {
+                            border-left: 0.25em solid var(-color-border-default, #444c56);
+                            padding: 0 1em;
+                            color: var(-color-fg-muted, #768390);
+                        }
+                        table { border-collapse: collapse; width: 100%%; }
+                        th, td { border: 1px solid var(-color-border-muted, #444c56); padding: 8px 13px; }
+                        th { font-weight: bold; background-color: var(-color-canvas-subtle, #2d333b); }
+                        img { max-width: 100%%; height: auto; border-radius: 6px; }
+                        ul, ol { padding-left: 2em; }
+                    </style>
+                </head>
+                <body>
+                    %s
+                </body>
+            </html>
+        """.formatted(rawHtml);
+
+        contentPreview.getEngine().loadContent(fullHtml);
     }
 
     // --- Reference Image Methods ---

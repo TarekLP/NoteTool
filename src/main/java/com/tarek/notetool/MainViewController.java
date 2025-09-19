@@ -270,7 +270,7 @@ public class MainViewController {
             imageGalleryPane.getChildren().add(galleryContent);
 
             // Initially hide the gallery off-screen to the right
-            imageGalleryPane.setTranslateX(300); // Assuming gallery width is 300
+            imageGalleryPane.setTranslateX(350); // Assuming gallery width is 350
             imageGalleryPane.setVisible(false);
 
         } catch (IOException e) {

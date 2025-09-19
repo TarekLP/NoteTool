@@ -28,6 +28,18 @@
             <artifactId>javafx-fxml</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <!-- JavaFX Web (for WebView) -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-web</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <!-- Flexmark for Markdown rendering. Using 'flexmark-all' simplifies dependency management. -->
+        <dependency>
+            <groupId>com.vladsch.flexmark</groupId>
+            <artifactId>flexmark-all</artifactId>
+            <version>0.64.8</version>
+        </dependency>
         <!-- AtlantaFX for modern themes -->
         <dependency>
             <groupId>io.github.mkpaz</groupId>
@@ -69,7 +81,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>com.tarek.notetool.Launcher</mainClass>
+                    <mainClass>com.tarek.notetool.MainApp</mainClass>
                 </configuration>
             </plugin>
             <plugin>
