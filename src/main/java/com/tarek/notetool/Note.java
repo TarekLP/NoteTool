@@ -6,18 +6,60 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class Note {
 
-    // Enum for the status of the note (e.g., To Do, In Progress, Done)
+    /** Enum for the status of the note (e.g., To Do, In Progress, Done) */
     public enum Status {
         TODO,
         IN_PROGRESS,
         DONE,
         ARCHIVED
+    }
+
+    /** Enum for the type of dependency between notes. */
+    public enum DependencyType {
+        BLOCKS,
+        BLOCKED_BY,
+        RELATED_TO;
+
+        /**
+         * Gets the inverse of a dependency type.
+         * BLOCKS is the inverse of BLOCKED_BY.
+         * RELATED_TO is its own inverse.
+         * @return The inverse DependencyType.
+         */
+        public DependencyType getInverse() {
+            return switch (this) {
+                case BLOCKS -> BLOCKED_BY;
+                case BLOCKED_BY -> BLOCKS;
+                case RELATED_TO -> RELATED_TO;
+            };
+        }
+    }
+
+    /**
+     * An immutable record to represent a dependency on another note.
+     */
+    public record Dependency(UUID otherNoteId, DependencyType type, String otherNoteTitle) {
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Dependency that = (Dependency) o;
+            // Equality is based on the target note and the relationship type, not the title which is for display.
+            return Objects.equals(otherNoteId, that.otherNoteId) && type == that.type;
+        }
+
+        @Override
+        public int hashCode() {
+            // Hash code should be consistent with the equals implementation.
+            return Objects.hash(otherNoteId, type);
+        }
     }
 
     // Enum for the priority level of the note
@@ -32,16 +74,36 @@ public class Note {
         private String description;
         private boolean completed;
         private List<Goal> subGoals;
+        private UUID linkedNoteId;
+        private String linkedNoteTitle;
 
         public Goal(String description) {
             this.description = description;
             this.completed = false;
             this.subGoals = new ArrayList<>();
+            this.linkedNoteId = null;
+            this.linkedNoteTitle = null;
+        }
+
+        /**
+         * Constructor for a Goal that links to another note.
+         * @param description The text to display for the goal.
+         * @param linkedNoteId The UUID of the note to link to.
+         * @param linkedNoteTitle The title of the linked note, stored for display.
+         */
+        public Goal(String description, UUID linkedNoteId, String linkedNoteTitle) {
+            this.description = description;
+            this.completed = false;
+            this.subGoals = new ArrayList<>();
+            this.linkedNoteId = linkedNoteId;
+            this.linkedNoteTitle = linkedNoteTitle;
         }
 
         public Goal(Goal original) {
             this.description = original.description;
             this.completed = original.completed;
+            this.linkedNoteId = original.linkedNoteId;
+            this.linkedNoteTitle = original.linkedNoteTitle;
             // Deep copy of sub-goals
             this.subGoals = new ArrayList<>();
             if (original.subGoals != null) {
@@ -87,6 +149,18 @@ public class Note {
         public void removeSubGoal(Goal subGoal) {
             this.subGoals.remove(subGoal);
         }
+
+        public Optional<UUID> getLinkedNoteId() {
+            return Optional.ofNullable(linkedNoteId);
+        }
+
+        public Optional<String> getLinkedNoteTitle() {
+            return Optional.ofNullable(linkedNoteTitle);
+        }
+
+        public boolean isLink() {
+            return this.linkedNoteId != null;
+        }
     }
 
     public static class Comment {
@@ -117,6 +191,8 @@ public class Note {
     private List<Comment> comments;
     private List<Goal> goals; // A list of sub-tasks or goals
     private Set<String> tags; // A set of labels for categorization
+    private List<String> attachmentPaths; // Stores relative paths to attached files
+    private List<Dependency> dependencies; // Stores relationships to other notes
 
     /**
      * Constructor for a new Note.
@@ -135,6 +211,8 @@ public class Note {
         this.comments = new ArrayList<>();
         this.goals = new ArrayList<>();
         this.tags = new HashSet<>();
+        this.attachmentPaths = new ArrayList<>();
+        this.dependencies = new ArrayList<>();
     }
 
     /**
@@ -156,13 +234,17 @@ public class Note {
         this.creationDate = original.creationDate;
         this.lastModifiedDate = original.lastModifiedDate;
         this.dueDate = original.dueDate;
-        this.assignees = new ArrayList<>(original.assignees);
-        this.comments = new ArrayList<>(original.comments);
+        this.assignees = original.assignees != null ? new ArrayList<>(original.assignees) : new ArrayList<>();
+        this.comments = original.comments != null ? new ArrayList<>(original.comments) : new ArrayList<>();
         this.goals = new ArrayList<>();
-        for (Goal originalGoal : original.goals) {
-            this.goals.add(new Goal(originalGoal));
+        if (original.goals != null) {
+            for (Goal originalGoal : original.goals) {
+                this.goals.add(new Goal(originalGoal));
+            }
         }
-        this.tags = new HashSet<>(original.tags);
+        this.tags = original.tags != null ? new HashSet<>(original.tags) : new HashSet<>();
+        this.attachmentPaths = original.attachmentPaths != null ? new ArrayList<>(original.attachmentPaths) : new ArrayList<>();
+        this.dependencies = original.dependencies != null ? new ArrayList<>(original.dependencies) : new ArrayList<>();
     }
 
     /**
@@ -190,6 +272,10 @@ public class Note {
             newGoals.add(new Goal(g));
         }
         newNote.setGoals(newGoals);
+
+        // Copy attachments and dependencies
+        newNote.setAttachmentPaths(this.attachmentPaths);
+        newNote.setDependencies(this.dependencies);
 
         // Comments are intentionally not copied for a duplication action.
         return newNote;
@@ -292,6 +378,34 @@ public class Note {
         updateLastModified();
     }
 
+    public List<String> getAttachmentPaths() {
+        if (attachmentPaths == null) {
+            attachmentPaths = new ArrayList<>();
+        }
+        return Collections.unmodifiableList(attachmentPaths);
+    }
+
+    public void setAttachmentPaths(List<String> attachmentPaths) {
+        // Create a mutable copy to ensure the internal list cannot be modified externally
+        this.attachmentPaths = new ArrayList<>(attachmentPaths);
+        updateLastModified();
+    }
+
+    public List<Dependency> getDependencies() {
+        if (dependencies == null) {
+            dependencies = new ArrayList<>();
+        }
+        return Collections.unmodifiableList(dependencies);
+    }
+
+    public void setDependencies(List<Dependency> dependencies) {
+        // Create a mutable copy to ensure the internal list cannot be modified externally
+        this.dependencies = new ArrayList<>(dependencies);
+        updateLastModified();
+    }
+
+
+
     // --- Helper Methods ---
 
     /**
@@ -318,6 +432,8 @@ public class Note {
         this.comments = new ArrayList<>(source.comments);
         this.goals = source.goals.stream().map(Goal::new).collect(Collectors.toList());
         this.tags = new HashSet<>(source.tags);
+        this.attachmentPaths = new ArrayList<>(source.attachmentPaths);
+        this.dependencies = new ArrayList<>(source.dependencies);
     }
 
     private void updateLastModified() {

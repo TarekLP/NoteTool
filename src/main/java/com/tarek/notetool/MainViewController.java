@@ -56,6 +56,7 @@ import javafx.stage.FileChooser;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
@@ -68,11 +69,13 @@ import java.io.File;
 import java.util.Arrays;
 import javafx.beans.value.ChangeListener;
 import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignB;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignA;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignD;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignF;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignS;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignL;
 
 public class MainViewController {
 
@@ -549,6 +552,66 @@ public class MainViewController {
             Tooltip.install(assigneeLabel, new Tooltip("Assigned to: " + assigneeNames));
             detailsBox.getChildren().add(assigneeLabel);
         }
+
+        // Dependencies
+        if (note.getDependencies() != null && !note.getDependencies().isEmpty()) {
+            // --- Active Blockers ---
+            List<String> activeBlockerTitles = note.getDependencies().stream()
+                    .filter(dep -> dep.type() == Note.DependencyType.BLOCKED_BY)
+                    .filter(dep -> noteManager.findNoteAcrossAllBoards(dep.otherNoteId())
+                            .map(blocker -> blocker.getStatus() != Note.Status.DONE && blocker.getStatus() != Note.Status.ARCHIVED)
+                            .orElse(false)) // If note not found, it's not an active blocker.
+                    .map(Note.Dependency::otherNoteTitle)
+                    .collect(Collectors.toList());
+
+            if (!activeBlockerTitles.isEmpty()) {
+                FontIcon depIcon = new FontIcon(MaterialDesignL.LOCK_OUTLINE);
+                depIcon.setIconSize(12);
+                depIcon.getStyleClass().addAll("detail-icon", "danger-icon");
+                Tooltip.install(depIcon, new Tooltip("Blocked by: " + String.join(", ", activeBlockerTitles)));
+                detailsBox.getChildren().add(depIcon);
+            }
+
+            // --- Notes this one Blocks ---
+            List<String> blockedByThisNoteTitles = note.getDependencies().stream()
+                    .filter(dep -> dep.type() == Note.DependencyType.BLOCKS)
+                    .map(Note.Dependency::otherNoteTitle)
+                    .collect(Collectors.toList());
+
+            if (!blockedByThisNoteTitles.isEmpty()) {
+                FontIcon depIcon = new FontIcon(MaterialDesignB.BLOCK_HELPER);
+                depIcon.setIconSize(12);
+                depIcon.getStyleClass().addAll("detail-icon", "warning-icon");
+                Tooltip.install(depIcon, new Tooltip("Blocks: " + String.join(", ", blockedByThisNoteTitles)));
+                detailsBox.getChildren().add(depIcon);
+            }
+        }
+
+        // --- Related & Linked Goals Icon ---
+        List<String> relatedNoteTitles = note.getDependencies().stream()
+                .filter(dep -> dep.type() == Note.DependencyType.RELATED_TO)
+                .map(Note.Dependency::otherNoteTitle)
+                .collect(Collectors.toList());
+
+        boolean hasLinkedGoals = note.getGoals().stream().anyMatch(this::goalHasLinks);
+
+        if (!relatedNoteTitles.isEmpty() || hasLinkedGoals) {
+            FontIcon linkIcon = new FontIcon(MaterialDesignL.LINK_VARIANT);
+            linkIcon.setIconSize(12);
+            linkIcon.getStyleClass().add("detail-icon");
+
+            List<String> tooltipParts = new ArrayList<>();
+            if (!relatedNoteTitles.isEmpty()) {
+                tooltipParts.add("Related to: " + String.join(", ", relatedNoteTitles));
+            }
+            if (hasLinkedGoals) {
+                tooltipParts.add("Contains links to other notes in its goals.");
+            }
+
+            Tooltip.install(linkIcon, new Tooltip(String.join("\n", tooltipParts)));
+            detailsBox.getChildren().add(linkIcon);
+        }
+
         return detailsBox;
     }
 
@@ -1008,7 +1071,22 @@ public class MainViewController {
     }
 
     private void handleReorderNote(UUID draggedNoteId, Note.Status targetStatus, int newIndexInUI) {
+        // Find the note first to perform checks before any UI manipulation
         currentBoard.findNoteById(draggedNoteId).ifPresent(noteToMove -> {
+            // --- NEW: Check for blockers before moving to DONE ---
+            if (targetStatus == Note.Status.DONE || targetStatus == Note.Status.ARCHIVED) {
+                List<String> openBlockers = getOpenBlockers(noteToMove);
+                if (!openBlockers.isEmpty()) {
+                    String blockersList = openBlockers.stream()
+                            .map(title -> "- " + title)
+                            .collect(Collectors.joining("\n"));
+                    showError("Move Blocked", "This note cannot be completed because it is still blocked by:\n\n" +
+                            blockersList);
+                    return; // Abort the move
+                }
+            }
+
+            // If checks pass, proceed with the move
             VBox oldContainer = noteContainersMap.get(noteToMove.getStatus());
             VBox newContainer = noteContainersMap.get(targetStatus);
 
@@ -1180,6 +1258,7 @@ public class MainViewController {
             controller.setNote(note);
             controller.setUsers(currentBoard.getMembers());
             controller.setAllTags(noteManager.getAllTags());
+            controller.setNoteManager(noteManager); // Pass the NoteManager for dependency searching
             if (noteManager.getCurrentUser() != null) {
                 controller.setCurrentUser(noteManager.getCurrentUser()); // Set the current user for commenting
             }
@@ -1204,6 +1283,25 @@ public class MainViewController {
 
             // Refresh recent notes list after closing
             refreshRecentNotesList();
+
+            // Check if the user clicked a link to open another note
+            Optional<UUID> noteToOpenId = controller.getNoteToOpen();
+            if (noteToOpenId.isPresent()) {
+                noteManager.findNoteAndBoard(noteToOpenId.get()).ifPresent(pair -> {
+                    // Use Platform.runLater to avoid issues with opening a new dialog
+                    // while the old one is still in its closing phase.
+                    Platform.runLater(() -> {
+                        // Switch to the board if it's not the current one
+                        if (currentBoard == null || !currentBoard.getName().equals(pair.board.getName())) {
+                            boardListView.getSelectionModel().select(pair.board.getName());
+                        }
+                        // Open the detail view for the linked note. We don't have a card context here.
+                        showNoteDetailView(pair.note, null);
+                    });
+                });
+                // Stop further processing since we are opening a new note and any other result is irrelevant.
+                return;
+            }
 
             // Check if the user saved the changes by getting the returned note copy
             controller.getResult().ifPresent(result -> {
@@ -1241,5 +1339,38 @@ public class MainViewController {
         } catch (IOException e) {
             showError("Failed to open editor", "Could not load the note detail view. Error: " + e.getMessage());
         }
+    }
+
+    /**
+     * Checks a note for any "BLOCKED_BY" dependencies that are not yet completed.
+     *
+     * @param note The note to check.
+     * @return A list of titles of the notes that are actively blocking the given note.
+     */
+    private List<String> getOpenBlockers(Note note) {
+        if (note == null || note.getDependencies() == null) {
+            return Collections.emptyList();
+        }
+        return note.getDependencies().stream()
+                .filter(dep -> dep.type() == Note.DependencyType.BLOCKED_BY)
+                .filter(dep -> noteManager.findNoteAcrossAllBoards(dep.otherNoteId())
+                        .map(blocker -> blocker.getStatus() != Note.Status.DONE && blocker.getStatus() != Note.Status.ARCHIVED)
+                        .orElse(false)) // Treat a non-existent note as a non-blocker
+                .map(Note.Dependency::otherNoteTitle)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Recursively checks if a goal or any of its sub-goals are links to other notes.
+     *
+     * @param goal The goal to check.
+     * @return true if a link is found, false otherwise.
+     */
+    private boolean goalHasLinks(Note.Goal goal) {
+        if (goal.isLink()) {
+            return true;
+        }
+        // The getSubGoals() method on the Goal class returns an unmodifiable list, which is never null.
+        return goal.getSubGoals().stream().anyMatch(this::goalHasLinks);
     }
 }

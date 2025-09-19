@@ -29,6 +29,14 @@ public class MainApp extends Application {
     private Timeline autoSaveTimeline;
 
     /**
+     * Gets the path to the directory where attachments are stored.
+     * @return The Path for the application's attachments directory.
+     */
+    public static Path getAttachmentsDirectory() {
+        return DATA_DIRECTORY_PATH.resolve("attachments");
+    }
+
+    /**
      * Determines the appropriate data storage path.
      * If a OneDrive folder is detected via environment variables, it's used as the base.
      * Otherwise, it defaults to the standard user home folder.
@@ -59,6 +67,15 @@ public class MainApp extends Application {
     public void start(Stage stage) throws Exception {
         // Check for data in the old format and offer to migrate it before loading anything.
         checkForAndOfferMigration();
+
+        // Ensure the attachments directory exists
+        try {
+            Files.createDirectories(getAttachmentsDirectory());
+        } catch (IOException e) {
+            System.err.println("Could not create attachments directory: " + e.getMessage());
+            // This is not fatal, so we just log it and continue.
+        }
+
 
         // Apply the modern theme
         Application.setUserAgentStylesheet(new PrimerDark().getUserAgentStylesheet());

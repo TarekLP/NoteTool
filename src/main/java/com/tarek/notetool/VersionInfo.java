@@ -5,7 +5,7 @@ import java.util.prefs.Preferences;
 public class VersionInfo {
 
     // The current version of the application. Increment this for new releases.
-    public static final String CURRENT_VERSION = "1.1.0";
+    public static final String CURRENT_VERSION = "1.2.0";
 
     private static final String LAST_SEEN_VERSION_KEY = "lastSeenWhatsNewVersion";
     private static final Preferences prefs = Preferences.userNodeForPackage(MainApp.class);

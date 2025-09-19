@@ -28,13 +28,11 @@ public class WhatsNewController {
         headerLabel.setText("What's New in v" + VersionInfo.CURRENT_VERSION);
 
         List<String> changes = List.of(
-                "✨ Hierarchical Goals: Break down complex tasks with nested sub-goals in a new tree view.",
-                "✨ Smart Goal Completion: Parent goals automatically complete when all sub-goals are done. Checking a parent also completes all its children.",
-                "✨ Column Sorting: Instantly sort notes within a column by Priority, Due Date, or Title.",
-                "✨ Automatic User Assignment: New and duplicated notes are now automatically assigned to the current user.",
-                "✨ Quick Reordering: Use the new 'Move to Top/Bottom' context menu option to organize notes faster.",
-                "✨ Clear Completed Goals: A new button in the note editor helps you clean up your task list with a single click.",
-                "✨ Robust Editor: The note editor has been refactored to be more resilient against build and caching issues."
+                "✨ File Attachments: You can now attach files directly to your notes! Keep all your resources in one place.",
+                "✨ Note Dependencies: Link notes together with 'Blocks', 'Blocked By', or 'Related To' relationships. Dependencies are now two-way!",
+                "✨ Visual Dependency Indicators: Note cards on the main board now show color-coded icons to indicate their dependency status at a glance (e.g., a red lock for blocked notes).",
+                "✨ @Note Linking in Goals: Quickly link to another note from the goals section by simply typing '@' followed by the note's name.",
+                "✨ Enhanced Note Model: The underlying data structure for notes has been improved to support these new features."
         );
 
         changesListView.setItems(FXCollections.observableArrayList(changes));

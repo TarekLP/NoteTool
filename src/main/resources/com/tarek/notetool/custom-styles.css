@@ -95,3 +95,17 @@
 .tag-remove-button:hover {
     -fx-background-color: #da3633;
 }
+
+/* For linked goals in the note editor */
+.linked-goal {
+    -fx-text-fill: -color-accent-fg;
+    -fx-cursor: hand;
+}
+
+.linked-goal .ikonli-font-icon {
+    -fx-icon-color: -color-accent-fg;
+}
+
+.linked-goal:hover {
+    -fx-background-color: -color-accent-subtle;
+}

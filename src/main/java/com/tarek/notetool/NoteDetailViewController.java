@@ -18,6 +18,10 @@ import javafx.scene.control.TreeView;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.layout.HBox;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.control.DatePicker;
 import javafx.scene.layout.Priority;
 import javafx.stage.Stage;
@@ -25,16 +29,38 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.input.MouseButton;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
+import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.geometry.Side;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
+import javafx.util.Pair;
+import javafx.util.Duration;
+import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignL;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignP;
 
+import java.awt.Desktop;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.stream.IntStream;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
+import java.util.UUID;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -87,19 +113,45 @@ public class NoteDetailViewController {
     @FXML
     private ComboBox<String> tagComboBox;
 
+    // --- NEW FXML Fields ---
+    @FXML
+    private ListView<String> attachmentsListView;
+    @FXML
+    private Button addAttachmentButton;
+
+    @FXML
+    private ListView<Note.Dependency> dependenciesListView;
+    @FXML
+    private Button addDependencyButton;
+
+    @FXML
+    private Button copyLinkButton;
+
     private Stage dialogStage;
     private Note noteCopy; // The editable copy of the note
     private Note initialNoteState; // A snapshot of the note's state when the editor was opened
     private boolean saved = false;
     private User currentUser;
+    private NoteManager noteManager; // To search for notes when adding dependencies
     private Set<String> tempTags; // A temporary set to stage tag changes
+
+    // Temporary lists to stage changes for new features
+    private List<String> tempAttachmentPaths;
+    private List<Note.Dependency> tempDependencies;
+    
+    private ContextMenu noteSuggestionsPopup;
+    private UUID noteToOpen = null;
+
 
     @FXML
     private void initialize() {
         priorityComboBox.getItems().setAll(Note.Priority.values());
 
-        // Allow adding goals by pressing Enter in the text field
-        newGoalField.setOnAction(e -> handleAddGoal());
+        // Listen for input in the goal field to show suggestions or add a new goal.
+        noteSuggestionsPopup = new ContextMenu();
+        newGoalField.textProperty().addListener((obs, oldVal, newVal) -> handleGoalInput(newVal));
+        newGoalField.setOnAction(e -> handleAddGoal()); // For pressing enter on plain text
+
 
         // Wire up the button to clear completed goals.
         if (clearCompletedGoalsButton != null) {
@@ -159,6 +211,29 @@ public class NoteDetailViewController {
         if (tagComboBox != null) {
             tagComboBox.setOnAction(e -> handleAddTagFromComboBox());
         }
+
+        // --- NEW: Attachments Setup ---
+        if (addAttachmentButton != null) {
+            addAttachmentButton.setOnAction(e -> handleAddAttachment());
+        }
+        if (attachmentsListView != null) {
+            setupAttachmentsListView();
+        }
+
+        // --- NEW: Dependencies Setup ---
+        if (addDependencyButton != null) {
+            addDependencyButton.setOnAction(e -> handleAddDependency());
+        }
+        if (dependenciesListView != null) {
+            setupDependenciesListView();
+        }
+
+        // --- NEW: Copy Link Button Setup ---
+        if (copyLinkButton != null) {
+            copyLinkButton.setGraphic(new FontIcon(MaterialDesignL.LINK));
+            Tooltip.install(copyLinkButton, new Tooltip("Copy Link to Note"));
+            copyLinkButton.setOnAction(e -> handleCopyLink());
+        }
     }
 
     public void setDialogStage(Stage dialogStage) {
@@ -213,6 +288,10 @@ public class NoteDetailViewController {
         this.currentUser = currentUser;
     }
 
+    public void setNoteManager(NoteManager noteManager) {
+        this.noteManager = noteManager;
+    }
+
     public void setNote(Note note) {
         // Work on a copy to prevent modifying the original object unless "Save" is clicked.
         this.noteCopy = new Note(note);
@@ -249,8 +328,23 @@ public class NoteDetailViewController {
         this.tempTags = new HashSet<>(noteCopy.getTags());
         refreshTagsPane(); // This will now safely do nothing if the pane is null
 
+        // Populate attachments
+        this.tempAttachmentPaths = new ArrayList<>(noteCopy.getAttachmentPaths());
+        if (attachmentsListView != null) {
+            attachmentsListView.setItems(FXCollections.observableArrayList(this.tempAttachmentPaths));
+        }
+
+        // Populate dependencies
+        this.tempDependencies = new ArrayList<>(noteCopy.getDependencies());
+        if (dependenciesListView != null) {
+            dependenciesListView.setItems(FXCollections.observableArrayList(this.tempDependencies));
+        }
         // Auto-focus the title field
         Platform.runLater(titleField::requestFocus);
+    }
+
+    public Optional<UUID> getNoteToOpen() {
+        return Optional.ofNullable(noteToOpen);
     }
 
     /**
@@ -295,6 +389,10 @@ public class NoteDetailViewController {
 
         noteCopy.setComments(commentsListView.getItems());
         noteCopy.setTags(this.tempTags);
+
+        // Save attachments and dependencies
+        noteCopy.setAttachmentPaths(this.tempAttachmentPaths);
+        noteCopy.setDependencies(this.tempDependencies);
 
         saved = true;
         dialogStage.close();
@@ -420,6 +518,258 @@ public class NoteDetailViewController {
         return tagView;
     }
 
+    // --- Attachment Methods ---
+
+    private void setupAttachmentsListView() {
+        attachmentsListView.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    // The stored name is unique; we extract the original name for display.
+                    String originalFileName = item.substring(item.indexOf('-') + 1);
+                    setText(originalFileName);
+                    setGraphic(new FontIcon(MaterialDesignP.PAPERCLIP));
+                }
+            }
+        });
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem openItem = new MenuItem("Open File");
+        openItem.setOnAction(e -> {
+            String selectedPath = attachmentsListView.getSelectionModel().getSelectedItem();
+            if (selectedPath != null) {
+                try {
+                    File fileToOpen = MainApp.getAttachmentsDirectory().resolve(selectedPath).toFile();
+                    if (fileToOpen.exists()) {
+                        Desktop.getDesktop().open(fileToOpen);
+                    } else {
+                        showError("File Not Found", "The attached file could not be found at its expected location.");
+                    }
+                } catch (IOException ex) {
+                    showError("Could Not Open File", "An error occurred while trying to open the file: " + ex.getMessage());
+                }
+            }
+        });
+
+        MenuItem removeItem = new MenuItem("Remove Attachment");
+        removeItem.setOnAction(e -> {
+            String selectedPath = attachmentsListView.getSelectionModel().getSelectedItem();
+            if (selectedPath != null) {
+                tempAttachmentPaths.remove(selectedPath);
+                attachmentsListView.getItems().remove(selectedPath);
+                // Note: We are not deleting the file from disk, just the reference.
+            }
+        });
+
+        contextMenu.getItems().addAll(openItem, new SeparatorMenuItem(), removeItem);
+        attachmentsListView.setContextMenu(contextMenu);
+    }
+
+    private void handleAddAttachment() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Attach File");
+        File selectedFile = fileChooser.showOpenDialog(dialogStage);
+
+        if (selectedFile != null) {
+            try {
+                Path attachmentsDir = MainApp.getAttachmentsDirectory();
+                // Create a unique filename to prevent collisions, but keep the original name for context
+                String uniqueFileName = UUID.randomUUID().toString().substring(0, 8) + "-" + selectedFile.getName();
+                Path targetPath = attachmentsDir.resolve(uniqueFileName);
+
+                Files.copy(selectedFile.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+                tempAttachmentPaths.add(uniqueFileName);
+                attachmentsListView.getItems().add(uniqueFileName);
+
+            } catch (IOException e) {
+                showError("Attachment Failed", "Could not attach the file. Error: " + e.getMessage());
+            }
+        }
+    }
+
+    private void handleGoalInput(String text) {
+        if (text != null && text.startsWith("@")) {
+            String query = text.substring(1);
+            if (!query.trim().isEmpty()) {
+                // Search for notes
+                Map<Note, Board> results = noteManager.searchAllNotes(query);
+                List<Pair<Note, Board>> resultList = results.entrySet().stream()
+                        .filter(entry -> !entry.getKey().getId().equals(noteCopy.getId())) // Exclude self
+                        .map(entry -> new Pair<>(entry.getKey(), entry.getValue()))
+                        .collect(Collectors.toList());
+
+                if (!resultList.isEmpty()) {
+                    // Populate and show popup
+                    populateSuggestionsPopup(resultList);
+                    if (!noteSuggestionsPopup.isShowing()) {
+                        noteSuggestionsPopup.show(newGoalField, Side.BOTTOM, 0, 0);
+                    }
+                } else {
+                    noteSuggestionsPopup.hide();
+                }
+            } else {
+                noteSuggestionsPopup.hide();
+            }
+        } else {
+            noteSuggestionsPopup.hide();
+        }
+    }
+
+    private void populateSuggestionsPopup(List<Pair<Note, Board>> notes) {
+        noteSuggestionsPopup.getItems().clear();
+        for (Pair<Note, Board> pair : notes) {
+            Note note = pair.getKey();
+            Board board = pair.getValue();
+            String itemText = "'" + note.getTitle() + "' on [" + board.getName() + "]";
+            MenuItem item = new MenuItem(itemText);
+            item.setOnAction(e -> {
+                // Create a linked goal
+                addLinkedGoal(note);
+                newGoalField.clear();
+                noteSuggestionsPopup.hide();
+            });
+            noteSuggestionsPopup.getItems().add(item);
+        }
+    }
+
+    private void addLinkedGoal(Note targetNote) {
+        // The description will be the note's title. The GoalTreeCell will prepend an icon.
+        Note.Goal newGoal = new Note.Goal(targetNote.getTitle(), targetNote.getId(), targetNote.getTitle());
+        TreeItem<Note.Goal> newGoalItem = new TreeItem<>(newGoal);
+
+        // Add to the currently selected item's sub-goals, or to the root if nothing is selected.
+        TreeItem<Note.Goal> selectedItem = goalsTreeView.getSelectionModel().getSelectedItem();
+        (selectedItem != null ? selectedItem : goalsTreeView.getRoot()).getChildren().add(newGoalItem);
+
+        updateGoalsProgress();
+    }
+
+    private void handleCopyLink() {
+        if (noteCopy == null) return;
+
+        // Create a custom URI for the note
+        String link = "notetool://note/" + noteCopy.getId().toString();
+
+        final Clipboard clipboard = Clipboard.getSystemClipboard();
+        final ClipboardContent content = new ClipboardContent();
+        content.putString(link);
+        clipboard.setContent(content);
+
+        // --- Provide temporary user feedback ---
+        final Node originalGraphic = copyLinkButton.getGraphic();
+        copyLinkButton.setGraphic(new FontIcon(MaterialDesignC.CHECK));
+        copyLinkButton.setText("Copied!");
+
+        // Revert the button's state after a short delay
+        javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(Duration.seconds(2));
+        pause.setOnFinished(event -> {
+            copyLinkButton.setGraphic(originalGraphic);
+            copyLinkButton.setText(""); // Assuming it was icon-only before
+        });
+        pause.play();
+    }
+
+    // --- Dependency Methods ---
+
+    private void setupDependenciesListView() {
+        dependenciesListView.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(Note.Dependency item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    String typeStr = item.type().toString().replace('_', ' ').toLowerCase();
+                    setText(String.format("%s: %s", typeStr, item.otherNoteTitle()));
+                    setGraphic(new FontIcon(MaterialDesignL.LINK_VARIANT));
+                }
+            }
+        });
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem removeItem = new MenuItem("Remove Dependency");
+        removeItem.setOnAction(e -> {
+            Note.Dependency selectedDep = dependenciesListView.getSelectionModel().getSelectedItem();
+            if (selectedDep != null) {
+                // --- REMOVE INVERSE DEPENDENCY ---
+                // Find the other note that this dependency points to
+                noteManager.findNoteAcrossAllBoards(selectedDep.otherNoteId()).ifPresent(otherNote -> {
+                    // Determine what the inverse dependency would look like. The title doesn't matter for equality.
+                    Note.DependencyType inverseType = selectedDep.type().getInverse();
+                    Note.Dependency inverseDependency = new Note.Dependency(noteCopy.getId(), inverseType, "");
+
+                    // Get the other note's dependencies, remove the inverse link, and set them back
+                    List<Note.Dependency> otherNoteDependencies = new ArrayList<>(otherNote.getDependencies());
+                    if (otherNoteDependencies.remove(inverseDependency)) {
+                        otherNote.setDependencies(otherNoteDependencies);
+                        noteManager.markAsDirty(); // Mark manager as dirty for the change on the other note
+                    }
+                });
+
+                // --- REMOVE FORWARD DEPENDENCY (from the current note) ---
+                tempDependencies.remove(selectedDep);
+                dependenciesListView.getItems().remove(selectedDep);
+            }
+        });
+        contextMenu.getItems().add(removeItem);
+        dependenciesListView.setContextMenu(contextMenu);
+    }
+
+    private void handleAddDependency() {
+        if (noteManager == null) {
+            showError("Error", "NoteManager is not available to search for notes.");
+            return;
+        }
+
+        // Use the existing SearchResultsViewController in a dialog
+        Dialog<Pair<Note, Board>> searchDialog = new SearchNoteDialog(noteManager, noteCopy.getId());
+        Optional<Pair<Note, Board>> searchResult = searchDialog.showAndWait();
+
+        if (searchResult.isEmpty()) {
+            return; // User cancelled or didn't select anything
+        }
+
+        Note selectedNote = searchResult.get().getKey();
+
+        // Ask for dependency type
+        ChoiceDialog<Note.DependencyType> typeDialog = new ChoiceDialog<>(Note.DependencyType.RELATED_TO, Note.DependencyType.values());
+        typeDialog.setTitle("Select Dependency Type");
+        typeDialog.setHeaderText("How is this note related to '" + selectedNote.getTitle() + "'?");
+        typeDialog.setContentText("This note...");
+
+        Optional<Note.DependencyType> typeResult = typeDialog.showAndWait();
+
+        // Create and add the dependency
+        typeResult.ifPresent(type -> {
+            // --- FORWARD DEPENDENCY (Current Note -> Selected Note) ---
+            Note.Dependency forwardDependency = new Note.Dependency(selectedNote.getId(), type, selectedNote.getTitle());
+            if (!tempDependencies.contains(forwardDependency)) { // Avoid duplicates
+                tempDependencies.add(forwardDependency);
+                dependenciesListView.getItems().add(forwardDependency);
+
+                // --- INVERSE DEPENDENCY (Selected Note -> Current Note) ---
+                // Get the inverse type
+                Note.DependencyType inverseType = type.getInverse();
+                // Create the dependency record for the other note. The title of the current note is used for display on the other note.
+                Note.Dependency inverseDependency = new Note.Dependency(noteCopy.getId(), inverseType, noteCopy.getTitle());
+
+                // Get the other note's current dependencies and add the new one
+                List<Note.Dependency> otherNoteDependencies = new ArrayList<>(selectedNote.getDependencies());
+                if (!otherNoteDependencies.contains(inverseDependency)) {
+                    otherNoteDependencies.add(inverseDependency);
+                    selectedNote.setDependencies(otherNoteDependencies);
+                    noteManager.markAsDirty(); // IMPORTANT: Mark the manager as dirty because we changed another note
+                }
+            }
+        });
+    }
+
     private Set<String> findNewTags() {
         Set<String> newTags = new HashSet<>();
         if (tagComboBox != null) {
@@ -464,7 +814,16 @@ public class NoteDetailViewController {
                 .map(TreeItem::getValue).collect(Collectors.toList());
         if (areGoalListsDifferent(currentTopLevelGoals, initialNoteState.getGoals())) return true;
 
-        return !tempTags.equals(initialNoteState.getTags());
+        // Compare tags
+        if (!tempTags.equals(initialNoteState.getTags())) return true;
+
+        // Compare attachments (order doesn't matter)
+        if (!new HashSet<>(tempAttachmentPaths).equals(new HashSet<>(initialNoteState.getAttachmentPaths()))) return true;
+
+        // Compare dependencies (order does matter for display, but for dirty checking, a set is fine)
+        if (!new HashSet<>(tempDependencies).equals(new HashSet<>(initialNoteState.getDependencies()))) return true;
+
+        return false;
     }
 
     /**
@@ -481,6 +840,39 @@ public class NoteDetailViewController {
             if (areGoalListsDifferent(goal1.getSubGoals(), goal2.getSubGoals())) return true;
         }
         return false;
+    }
+
+    private void handleOpenLinkedNote(UUID noteId) {
+        // We need to check for unsaved changes before just closing.
+        if (isDirty()) {
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Unsaved Changes");
+            alert.setHeaderText("You have unsaved changes. Opening the link will discard them.");
+            alert.setContentText("Do you want to discard your changes and open the linked note?");
+            alert.getButtonTypes().setAll(ButtonType.YES, ButtonType.NO);
+
+            Optional<ButtonType> result = alert.showAndWait();
+            if (result.isPresent() && result.get() == ButtonType.YES) {
+                this.noteToOpen = noteId;
+                this.saved = false; // Explicitly mark as not saved
+                dialogStage.close();
+            }
+            // if NO, do nothing, stay in the editor.
+        } else {
+            // No unsaved changes, just open it.
+            this.noteToOpen = noteId;
+            this.saved = false;
+            dialogStage.close();
+        }
+    }
+
+    private void showError(String header, String content) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.initOwner(dialogStage);
+        alert.setTitle("Error");
+        alert.setHeaderText(header);
+        alert.setContentText(content);
+        alert.showAndWait();
     }
 
     private void updateGoalsProgress() {
@@ -578,11 +970,25 @@ public class NoteDetailViewController {
         private final CheckBox checkBox = new CheckBox();
         private final Button addSubGoalButton = new Button("+");
         private final Button deleteButton = new Button("x");
+        private final FontIcon linkIcon = new FontIcon(MaterialDesignL.LINK_VARIANT);
+        private final Label linkLabel = new Label();
         private TextField editField;
 
         public GoalTreeCell() {
             Tooltip.install(addSubGoalButton, new Tooltip("Add Sub-goal"));
             Tooltip.install(deleteButton, new Tooltip("Delete Goal"));
+
+            // Handle clicks on linked goals
+            this.setOnMouseClicked(event -> {
+                if (event.getButton() == MouseButton.PRIMARY && getItem() != null && getItem().isLink()) {
+                    getItem().getLinkedNoteId().ifPresent(noteId -> {
+                        // Call the handler method in the outer class
+                        NoteDetailViewController.this.handleOpenLinkedNote(noteId);
+                    });
+                    event.consume();
+                }
+            });
+
             addSubGoalButton.getStyleClass().add("rich-text-editor-button");
             deleteButton.getStyleClass().add("rich-text-editor-button");
 
@@ -677,18 +1083,34 @@ public class NoteDetailViewController {
             if (empty || item == null) {
                 setGraphic(null);
                 setText(null);
+                getStyleClass().remove("linked-goal");
             } else {
-                if (isEditing()) {
-                    if (editField != null) {
-                        editField.setText(item.getDescription());
-                    }
-                    setGraphic(editField);
+                if (item.isLink()) {
+                    // It's a link, show it differently and disable editing/completion
+                    getStyleClass().add("linked-goal");
+                    setTooltip(new Tooltip("Click to open note: " + item.getDescription()));
+
+                    linkLabel.setText(item.getDescription());
+                    HBox linkBox = new HBox(5, linkIcon, linkLabel);
+                    linkBox.setAlignment(Pos.CENTER_LEFT);
+                    setGraphic(linkBox);
                     setText(null);
                 } else {
-                    checkBox.setText(item.getDescription());
-                    checkBox.setSelected(item.isCompleted());
-                    setGraphic(hbox);
-                    setText(null);
+                    // It's a normal goal
+                    getStyleClass().remove("linked-goal");
+                    setTooltip(null);
+                    if (isEditing()) {
+                        if (editField != null) {
+                            editField.setText(item.getDescription());
+                        }
+                        setGraphic(editField);
+                        setText(null);
+                    } else {
+                        checkBox.setText(item.getDescription());
+                        checkBox.setSelected(item.isCompleted());
+                        setGraphic(hbox);
+                        setText(null);
+                    }
                 }
             }
         }
@@ -708,6 +1130,51 @@ public class NoteDetailViewController {
                     getItem().setDescription(editField.getText());
                     commitEdit(getItem());
                 }
+            });
+        }
+    }
+
+    /**
+     * A private helper class to create a standardized dialog for searching notes.
+     */
+    private static class SearchNoteDialog extends Dialog<Pair<Note, Board>> {
+        SearchNoteDialog(NoteManager noteManager, UUID noteToExclude) {
+            setTitle("Find Note to Link");
+            getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+            VBox content = new VBox(10);
+            content.setPadding(new Insets(10));
+            TextField searchField = new TextField();
+            searchField.setPromptText("Search for note by title...");
+            ListView<Pair<Note, Board>> resultsView = new ListView<>();
+            resultsView.setPrefHeight(200);
+
+            resultsView.setCellFactory(lv -> new ListCell<>() {
+                @Override
+                protected void updateItem(Pair<Note, Board> item, boolean empty) {
+                    super.updateItem(item, empty);
+                    setText(empty || item == null ? null : "'" + item.getKey().getTitle() + "' on board [" + item.getValue().getName() + "]");
+                }
+            });
+
+            searchField.setOnAction(e -> {
+                String query = searchField.getText();
+                if (query != null && !query.trim().isEmpty()) {
+                    Map<Note, Board> results = noteManager.searchAllNotes(query);
+                    List<Pair<Note, Board>> resultList = results.entrySet().stream()
+                            .filter(entry -> !entry.getKey().getId().equals(noteToExclude)) // Exclude self
+                            .map(entry -> new Pair<>(entry.getKey(), entry.getValue()))
+                            .collect(Collectors.toList());
+                    resultsView.setItems(FXCollections.observableArrayList(resultList));
+                }
+            });
+
+            content.getChildren().addAll(new Label("Search for a note to link:"), searchField, resultsView);
+            getDialogPane().setContent(content);
+            Platform.runLater(searchField::requestFocus);
+
+            setResultConverter(dialogButton -> {
+                return dialogButton == ButtonType.OK ? resultsView.getSelectionModel().getSelectedItem() : null;
             });
         }
     }
