@@ -1,4 +1,4 @@
-## Tarek's incredible Note Tool
+## Notey
 
 # Introduction
 This tool is my own version of Trello and Clickup (Which ive used very actively in the past but ive always been turned off by their AI features / paid features).
