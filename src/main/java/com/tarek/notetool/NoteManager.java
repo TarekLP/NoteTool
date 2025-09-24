@@ -12,6 +12,7 @@ import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
+import javafx.embed.swing.SwingFXUtils;
 
 import java.io.File;
 import java.io.FileReader;
@@ -115,10 +116,12 @@ public class NoteManager {
         }
     }
 
-    public void removeGalleryImagePath(String imagePath) {
+    public boolean removeGalleryImagePath(String imagePath) {
         if (this.galleryImagePaths.remove(imagePath)) {
             markAsDirty();
+            return true;
         }
+        return false;
     }
 
     /**
@@ -134,7 +137,7 @@ public class NoteManager {
         if (boards.containsKey(boardName)) {
             throw new IllegalArgumentException("A board with the name '" + boardName + "' already exists.");
         }
-        Board newBoard = new Board(boardName, members);
+        Board newBoard = new Board(boardName, members, true);
         boards.put(boardName, newBoard);
         markAsDirty();
         return newBoard;
@@ -186,7 +189,7 @@ public class NoteManager {
         }
 
         // Create the new board with the same members
-        Board newBoard = new Board(newBoardName, originalBoard.getMembers());
+        Board newBoard = new Board(newBoardName, originalBoard.getMembers(), false);
 
         // Duplicate all notes from the original board to the new one
         for (Note originalNote : originalBoard.getAllNotes()) {
@@ -494,17 +497,53 @@ public class NoteManager {
             Type userListType = new TypeToken<List<User>>() {}.getType();
             List<User> members = context.deserialize(jsonObject.get("members"), userListType);
 
-            Board board = new Board(name, members != null ? members : new ArrayList<>());
+            Board board = new Board(name, members != null ? members : new ArrayList<>(), false);
 
-            if (jsonObject.has("columns")) {
-                Type columnMapType = new TypeToken<Map<Note.Status, List<Note>>>() {}.getType();
-                Map<Note.Status, List<Note>> deserializedColumns = context.deserialize(jsonObject.get("columns"), columnMapType);
-
+            // --- NEW: Robust Deserialization to handle old and new formats ---
+            if (jsonObject.has("columns") && jsonObject.get("columns").isJsonArray()) {
+                // This is the NEW format with a List<Column>
+                Type columnListType = new TypeToken<List<Column>>() {}.getType();
+                List<Column> deserializedColumns = context.deserialize(jsonObject.get("columns"), columnListType);
                 if (deserializedColumns != null) {
-                    deserializedColumns.values().stream()
-                        .flatMap(List::stream)
-                        .forEach(board::addNote);
+                    board.setColumns(deserializedColumns);
                 }
+
+                Type noteMapType = new TypeToken<Map<UUID, Note>>() {}.getType();
+                Map<UUID, Note> deserializedNotes = context.deserialize(jsonObject.get("notes"), noteMapType);
+                if (deserializedNotes != null) {
+                    // Directly populate the board's internal map to avoid the side effects of addNote(),
+                    // which would add duplicate note IDs to the already-deserialized columns.
+                    board.setNotesInternal(deserializedNotes);
+                }
+            } else if (jsonObject.has("columns") && jsonObject.get("columns").isJsonObject()) {
+                // This is the OLD format with an EnumMap<Status, List<Note>>
+                // We will migrate it on the fly.
+                System.out.println("Migrating old board format for: " + name);
+
+                // Manually create columns based on old statuses
+                Column todoCol = new Column("To Do");
+                Column inProgressCol = new Column("In Progress");
+                Column doneCol = new Column("Done");
+                Column archivedCol = new Column("Archived");
+                board.setColumns(List.of(todoCol, inProgressCol, doneCol, archivedCol));
+
+                // Deserialize the old structure
+                Type oldColumnMapType = new TypeToken<Map<String, List<Note>>>() {}.getType();
+                Map<String, List<Note>> oldColumns = context.deserialize(jsonObject.get("columns"), oldColumnMapType);
+
+                // A helper map to link old status names to new column IDs
+                Map<String, UUID> statusToColId = Map.of(
+                        "TODO", todoCol.getId(),
+                        "IN_PROGRESS", inProgressCol.getId(),
+                        "DONE", doneCol.getId(),
+                        "ARCHIVED", archivedCol.getId()
+                );
+
+                // Add all notes from the old structure to the new board structure
+                oldColumns.forEach((status, notes) -> notes.forEach(note -> {
+                    note.setColumnId(statusToColId.get(status));
+                    board.addNote(note);
+                }));
             }
             return board;
         }

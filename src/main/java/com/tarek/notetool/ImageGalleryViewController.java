@@ -4,6 +4,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.fxml.FXML;
 import javafx.scene.Cursor;
+import javafx.scene.control.Alert;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.Button;
@@ -14,6 +15,7 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.DataFormat;
 import javafx.scene.input.Dragboard;
+import javafx.scene.input.MouseButton;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.TilePane;
@@ -23,14 +25,18 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignL;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import javafx.embed.swing.SwingFXUtils;
 
 public class ImageGalleryViewController {
 
@@ -61,6 +67,37 @@ public class ImageGalleryViewController {
             if (onCloseRequestHandler != null) {
                 onCloseRequestHandler.run();
             }
+        });
+
+        // --- Responsive Tile Size ---
+        // Bind the preferred tile width to the width of the TilePane itself.
+        // This will create a 2-column layout that resizes with the panel.
+        // The subtraction accounts for horizontal gap and padding.
+        imageTilePane.prefTileWidthProperty().bind(imageTilePane.widthProperty().subtract(20));
+
+        // --- Drag and Drop to Add Images ---
+        imageTilePane.setOnDragOver(event -> {
+            Dragboard db = event.getDragboard();
+            if (db.hasFiles()) {
+                // Check if any of the files are images
+                boolean hasImageFile = db.getFiles().stream()
+                        .anyMatch(file -> file.getName().toLowerCase().matches(".*\\.(png|jpg|jpeg|gif|bmp)$"));
+                if (hasImageFile) {
+                    event.acceptTransferModes(TransferMode.COPY);
+                }
+            }
+            event.consume();
+        });
+
+        imageTilePane.setOnDragDropped(event -> {
+            Dragboard db = event.getDragboard();
+            boolean success = false;
+            if (db.hasFiles()) {
+                db.getFiles().forEach(file -> saveAndAddImage(file.toPath()));
+                success = true;
+            }
+            event.setDropCompleted(success);
+            event.consume();
         });
     }
 
@@ -98,14 +135,29 @@ public class ImageGalleryViewController {
     private void handlePasteImage() {
         Clipboard clipboard = Clipboard.getSystemClipboard();
         if (clipboard.hasImage()) {
-            showError("Paste Not Implemented", "Pasting images from the clipboard is a great next step to implement!");
-            // To implement this, you would:
-            // 1. Get the Image object: clipboard.getImage()
-            // 2. Use a Swing/AWT utility (ImageIO) to write this Image object to a temporary file.
-            // 3. Call saveAndAddImage() with the path to that temporary file.
+            Image fxImage = clipboard.getImage();
+            Path tempFile = null;
+            try {
+                // Create a temporary file to save the clipboard image
+                tempFile = Files.createTempFile("pasted-image-", ".png");
+
+                // Convert JavaFX Image to AWT BufferedImage and write it to the file
+                BufferedImage bufferedImage = SwingFXUtils.fromFXImage(fxImage, null);
+                ImageIO.write(bufferedImage, "png", tempFile.toFile());
+
+                // Use the existing logic to save and add the image to the gallery
+                saveAndAddImage(tempFile);
+
+            } catch (IOException e) {
+                showError("Paste Failed", "Could not process the image from the clipboard. Error: " + e.getMessage());
+            } finally {
+                if (tempFile != null) {
+                    try { Files.deleteIfExists(tempFile); } catch (IOException ignored) { /* Not critical */ }
+                }
+            }
         } else if (clipboard.hasFiles()) {
             clipboard.getFiles().stream()
-                    .filter(file -> file.getName().matches(".*\\.(png|jpg|jpeg|gif|bmp)$"))
+                    .filter(file -> file.getName().toLowerCase().matches(".*\\.(png|jpg|jpeg|gif|bmp)$"))
                     .forEach(file -> saveAndAddImage(file.toPath()));
         }
     }
@@ -129,25 +181,30 @@ public class ImageGalleryViewController {
 
     private void createImageView(String imageFileName) {
         Path imagePath = MainApp.getGalleryDirectory().resolve(imageFileName);
-        Image image = new Image(imagePath.toUri().toString(), 120, 120, true, true); // Load resized
+        // Load at a higher resolution so images don't look blurry when the panel is resized larger.
+        Image image = new Image(imagePath.toUri().toString(), 250, 250, true, true);
         ImageView imageView = new ImageView(image);
         imageView.setPreserveRatio(true);
-        imageView.setFitWidth(120);
-        imageView.setFitHeight(120);
 
+        // Bind the image view's size to the tile size for responsive scaling.
+        imageView.fitWidthProperty().bind(imageTilePane.prefTileWidthProperty());
         // --- Container for image and overlays ---
         StackPane imageContainer = new StackPane(imageView);
         imageContainer.setCursor(Cursor.OPEN_HAND);
 
         // --- UI for Deleting ---
         FontIcon deleteIcon = new FontIcon(MaterialDesignC.CLOSE_CIRCLE);
+        deleteIcon.setIconSize(24); // Increase icon size for better visibility
         deleteIcon.getStyleClass().add("image-delete-icon");
         deleteIcon.setVisible(false); // Initially hidden
+        // Add a background to make the icon stand out against any image color
+        deleteIcon.setStyle("-fx-background-color: rgba(0,0,0,0.5); -fx-background-radius: 50%;");
+
         deleteIcon.setOnMouseClicked(e -> {
-            noteManager.removeGalleryImagePath(imageFileName);
-            // The physical file is left behind, but could be deleted here too.
-            refreshGallery();
-            e.consume();
+            if (e.getButton() == MouseButton.PRIMARY) {
+                handleDeleteImage(imageFileName, imagePath);
+                e.consume();
+            }
         });
         imageContainer.getChildren().add(deleteIcon);
         StackPane.setAlignment(deleteIcon, Pos.TOP_RIGHT);
@@ -201,8 +258,45 @@ public class ImageGalleryViewController {
         imageTilePane.getChildren().add(imageContainer);
     }
 
+    private void handleDeleteImage(String imageFileName, Path imagePath) {
+        List<Note> usingNotes = noteManager.getNotesUsingImage(imageFileName);
+        boolean isInUse = !usingNotes.isEmpty();
+
+        // If the image is in use, ask for confirmation.
+        if (isInUse) {
+            Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+            confirmation.setTitle("Delete Image");
+            confirmation.setHeaderText("This image is currently used by " + usingNotes.size() + " note(s).");
+            String noteTitles = usingNotes.stream().map(Note::getTitle).limit(5).collect(Collectors.joining("\n- ", "\n- ", ""));
+            confirmation.setContentText("Are you sure you want to delete it? This will create broken links in the notes that reference it." + noteTitles);
+
+            Optional<ButtonType> result = confirmation.showAndWait();
+            if (result.isEmpty() || result.get() != ButtonType.OK) {
+                return; // User cancelled the deletion.
+            }
+        }
+
+        // Proceed with deletion.
+        // Remove from the model first.
+        if (noteManager.removeGalleryImagePath(imageFileName)) {
+            // If successful, delete the physical file.
+            try {
+                Files.deleteIfExists(imagePath);
+            } catch (IOException ioException) {
+                showError("Deletion Failed", "Could not delete the image file from disk: " + ioException.getMessage());
+            }
+        }
+        refreshGallery();
+    }
+
     private void showError(String header, String content) {
-        // In a real implementation, you'd use a proper Alert dialog.
-        System.err.println(header + ": " + content);
+        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR);
+        if (imageTilePane != null && imageTilePane.getScene() != null) {
+            alert.initOwner(imageTilePane.getScene().getWindow());
+        }
+        alert.setTitle("Image Gallery Error");
+        alert.setHeaderText(header);
+        alert.setContentText(content);
+        alert.showAndWait();
     }
 }

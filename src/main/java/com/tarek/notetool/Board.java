@@ -1,13 +1,15 @@
 package com.tarek.notetool;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Represents a board, similar to Trello, that contains columns of notes.
@@ -17,21 +19,25 @@ public class Board {
 
     private String name;
     private List<User> members;
-
-    // An EnumMap is a highly efficient Map implementation for use with enum keys.
-    private final Map<Note.Status, List<Note>> columns;
+    private final List<Column> columns;
+    private final Map<UUID, Note> notes;
 
     /**
      * Constructs a new Board with a given name.
      * Initializes empty columns for each possible note status.
      * @param name The name of the board.
      */
-    public Board(String name, List<User> members) {
+    public Board(String name, List<User> members, boolean isNew) {
         this.name = name;
         this.members = new ArrayList<>(members);
-        this.columns = new EnumMap<>(Note.Status.class);
-        for (Note.Status status : Note.Status.values()) {
-            columns.put(status, new ArrayList<>());
+        this.columns = new ArrayList<>();
+        this.notes = new HashMap<>();
+
+        if (isNew) {
+            // Add default columns for a new board
+            this.columns.add(new Column("To Do"));
+            this.columns.add(new Column("In Progress"));
+            this.columns.add(new Column("Done"));
         }
     }
 
@@ -47,16 +53,37 @@ public class Board {
         return Collections.unmodifiableList(members);
     }
 
+    public List<Column> getColumns() {
+        return Collections.unmodifiableList(columns);
+    }
+
+    public void setColumns(List<Column> columns) {
+        this.columns.clear();
+        this.columns.addAll(columns);
+    }
+
+    /**
+     * Internal method for setting the notes map directly, intended for use during deserialization.
+     * This bypasses the logic in `addNote` to prevent side effects like creating duplicate references.
+     * @param notes The map of notes to set.
+     */
+    void setNotesInternal(Map<UUID, Note> notes) {
+        this.notes.putAll(notes);
+    }
+
     /**
      * Adds a note to the board. The note is placed in the column
      * corresponding to its current status.
      * @param note The note to add.
      */
     public void addNote(Note note) {
-        if (note != null) {
-            // Ensure the note isn't already on the board in another column
-            removeNote(note.getId());
-            columns.get(note.getStatus()).add(note);
+        if (note != null && !notes.containsKey(note.getId())) {
+            notes.put(note.getId(), note);
+            // Add the note to its designated column's list of IDs
+            findColumnById(note.getColumnId()).ifPresent(column -> {
+                // Add to the end by default
+                column.getNoteIds().add(note.getId());
+            });
         }
     }
 
@@ -66,55 +93,44 @@ public class Board {
      * @return An Optional containing the note if found, otherwise an empty Optional.
      */
     public Optional<Note> findNoteById(UUID noteId) {
-        for (List<Note> notesInColumn : columns.values()) {
-            for (Note note : notesInColumn) {
-                if (note.getId().equals(noteId)) {
-                    return Optional.of(note);
-                }
-            }
-        }
-        return Optional.empty();
+        return Optional.ofNullable(notes.get(noteId));
     }
 
     /**
      * Moves a note to a different status column.
      * When no index is specified, the note is placed at the end of the target column.
      * @param noteId The ID of the note to move.
-     * @param newStatus The new status for the note.
+     * @param newColumnId The new status for the note.
      * @return true if the note was found and moved, false otherwise.
      */
-    public boolean moveNote(UUID noteId, Note.Status newStatus) {
-        List<Note> newList = columns.get(newStatus);
-        if (newList == null) return false;
-
-        return moveNote(noteId, newStatus, newList.size());
-    }
-
-    /**
-     * Moves a note to a new status and/or a new position within a column.
-     * @param noteId The ID of the note to move.
-     * @param newStatus The new status for the note.
-     * @param newIndex The new index for the note within the target column's list.
-     * @return true if the note was found and moved, false otherwise.
-     */
-    public boolean moveNote(UUID noteId, Note.Status newStatus, int newIndex) {
+    public boolean moveNote(UUID noteId, UUID newColumnId, int newIndex) {
         return findNoteById(noteId).map(note -> {
-            Note.Status oldStatus = note.getStatus();
-            List<Note> oldList = columns.get(oldStatus);
-            List<Note> newList = columns.get(newStatus);
+            UUID oldColumnId = note.getColumnId();
 
-            if (oldList == null || newList == null) return false;
+            // Remove from old column's noteId list
+            findColumnById(oldColumnId).ifPresent(oldCol -> oldCol.getNoteIds().remove(noteId));
 
-            oldList.remove(note);
-            note.setStatus(newStatus);
+            // Add to new column's noteId list at the specified index
+            findColumnById(newColumnId).ifPresent(newCol -> {
+                List<UUID> noteIds = newCol.getNoteIds();
+                if (newIndex >= 0 && newIndex <= noteIds.size()) {
+                    noteIds.add(newIndex, noteId);
+                } else {
+                    noteIds.add(noteId); // Fallback to adding at the end
+                }
+            });
 
-            if (newIndex >= 0 && newIndex <= newList.size()) {
-                newList.add(newIndex, note);
-            } else {
-                newList.add(note); // Fallback: add to the end
+            // Update the note's own columnId
+            if (!newColumnId.equals(oldColumnId)) {
+                note.setColumnId(newColumnId);
             }
+
             return true;
         }).orElse(false);
+    }
+
+    public Optional<Column> findColumnById(UUID columnId) {
+        return columns.stream().filter(c -> c.getId().equals(columnId)).findFirst();
     }
 
     /**
@@ -123,9 +139,12 @@ public class Board {
      * @return true if the note was found and removed, false otherwise.
      */
     public boolean removeNote(UUID noteId) {
-        return findNoteById(noteId).map(note ->
-            columns.get(note.getStatus()).remove(note)
-        ).orElse(false);
+        if (notes.remove(noteId) != null) {
+            // Also remove the ID from any column that contains it
+            columns.forEach(column -> column.getNoteIds().remove(noteId));
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -133,8 +152,14 @@ public class Board {
      * @param status The status of the column.
      * @return An unmodifiable list of notes.
      */
-    public List<Note> getNotesInColumn(Note.Status status) {
-        return Collections.unmodifiableList(columns.get(status));
+    public List<Note> getNotesInColumn(UUID columnId) {
+        return findColumnById(columnId)
+                .map(column -> column.getNoteIds().stream()
+                        .map(this::findNoteById)
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .collect(Collectors.toList()))
+                .orElse(Collections.emptyList());
     }
 
     /**
@@ -142,23 +167,17 @@ public class Board {
      * @return An unmodifiable list of all notes.
      */
     public List<Note> getAllNotes() {
-        List<Note> allNotes = new ArrayList<>();
-        for (List<Note> notesInColumn : columns.values()) {
-            allNotes.addAll(notesInColumn);
-        }
-        return Collections.unmodifiableList(allNotes);
+        return new ArrayList<>(notes.values());
     }
 
     /**
      * Sorts the notes within a specific column using the given comparator.
-     * @param status The status of the column to sort.
+     * @param columnId The status of the column to sort.
      * @param comparator The comparator to define the sort order.
      */
-    public void sortColumn(Note.Status status, Comparator<Note> comparator) {
-        List<Note> notesInColumn = columns.get(status);
-        if (notesInColumn != null) {
-            notesInColumn.sort(comparator);
-        }
+    public void sortColumn(UUID columnId, Comparator<Note> comparator) {
+        // This is now a UI concern, as the underlying list of all notes is not sorted per-column.
+        // The MainViewController will get the notes for a column and sort them for display.
     }
 
     /**
@@ -168,12 +187,13 @@ public class Board {
         System.out.println("========================================");
         System.out.println(" Board: " + this.name);
         System.out.println("========================================");
-        columns.forEach((status, notes) -> {
-            System.out.println("\n--- " + status + " ---");
-            if (notes.isEmpty()) {
+        columns.forEach(column -> {
+            System.out.println("\n--- " + column.getName() + " ---");
+            List<Note> notesInCol = getNotesInColumn(column.getId());
+            if (notesInCol.isEmpty()) {
                 System.out.println("(empty)");
             } else {
-                notes.forEach(note -> System.out.println("  - " + note.getTitle() + " (ID: " + note.getId().toString().substring(0, 8) + ")"));
+                notesInCol.forEach(note -> System.out.println("  - " + note.getTitle() + " (ID: " + note.getId().toString().substring(0, 8) + ")"));
             }
         });
         System.out.println("\n========================================");

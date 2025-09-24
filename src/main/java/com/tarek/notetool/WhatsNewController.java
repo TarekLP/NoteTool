@@ -28,10 +28,14 @@ public class WhatsNewController {
         headerLabel.setText("What's New in v" + VersionInfo.CURRENT_VERSION);
 
         List<String> changes = List.of(
+                "✨ Enhanced Markdown Preview: The live preview now supports syntax highlighting for code blocks and renders GitHub-style task lists (`- [x]`).",
+                "✨ Live Markdown Editor: The note editor now features a real-time, side-by-side preview. No more switching tabs to see your formatted text and images!",
                 "✨ Slide-out Image Gallery: A new global panel on the right to collect reference images. Toggle it with the new image icon in the top bar.",
+                "✨ Customizable Columns: Right-click a column header to rename, add, delete, or reorder columns.",
+                "✨ Embed Images in Notes: Type `@` in the note editor to search and embed images from your gallery directly into the note content.",
+                "✨ Add images to the gallery from your computer, by pasting image files, or by pasting image data (like screenshots) from your clipboard.",
                 "✨ Drag-and-Drop References: Drag images from the gallery and drop them onto a note to create a visual reference.",
-                "✨ Add images to the gallery from your computer or by pasting image files from your clipboard.",
-                "✨ Note Model Update: The data model for notes has been updated to support image references."
+                "✨ Note Model Update: The data model for notes and boards has been updated to support customizable columns and image references."
         );
 
         changesListView.setItems(FXCollections.observableArrayList(changes));

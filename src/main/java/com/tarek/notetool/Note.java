@@ -1,5 +1,6 @@
 package com.tarek.notetool;
 
+import com.google.gson.annotations.Expose;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,14 +13,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class Note {
-
-    /** Enum for the status of the note (e.g., To Do, In Progress, Done) */
-    public enum Status {
-        TODO,
-        IN_PROGRESS,
-        DONE,
-        ARCHIVED
-    }
 
     /** Enum for the type of dependency between notes. */
     public enum DependencyType {
@@ -150,6 +143,17 @@ public class Note {
             this.subGoals.remove(subGoal);
         }
 
+        /**
+         * Removes all completed sub-goals from this goal's internal list.
+         * @return true if the list was modified, false otherwise.
+         */
+        public boolean removeCompletedSubGoals() {
+            if (this.subGoals == null) {
+                return false;
+            }
+            return this.subGoals.removeIf(Goal::isCompleted);
+        }
+
         public Optional<UUID> getLinkedNoteId() {
             return Optional.ofNullable(linkedNoteId);
         }
@@ -182,7 +186,7 @@ public class Note {
     private final UUID id;
     private String title;
     private String content;
-    private Status status;
+    private UUID columnId; // Replaces Status
     private Priority priority;
     private final LocalDateTime creationDate;
     private LocalDateTime lastModifiedDate;
@@ -204,7 +208,6 @@ public class Note {
         this.id = UUID.randomUUID(); // Assign a unique ID
         this.title = title;
         this.content = content;
-        this.status = Status.TODO; // Default status
         this.priority = Priority.MEDIUM; // Default priority
         this.creationDate = LocalDateTime.now();
         this.lastModifiedDate = LocalDateTime.now();
@@ -231,7 +234,7 @@ public class Note {
         this.id = original.id;
         this.title = original.title;
         this.content = original.content;
-        this.status = original.status;
+        this.columnId = original.columnId;
         this.priority = original.priority;
         this.creationDate = original.creationDate;
         this.lastModifiedDate = original.lastModifiedDate;
@@ -263,7 +266,7 @@ public class Note {
         Note newNote = new Note(this.title, this.content);
 
         // Copy the relevant properties from the original
-        newNote.setStatus(this.status);
+        newNote.setColumnId(this.columnId);
         newNote.setPriority(this.priority);
         newNote.setDueDate(this.dueDate);
         newNote.setAssignees(this.assignees); // setAssignees already creates a new list
@@ -309,12 +312,12 @@ public class Note {
         updateLastModified();
     }
 
-    public Status getStatus() {
-        return status;
+    public UUID getColumnId() {
+        return columnId;
     }
 
-    public void setStatus(Status status) {
-        this.status = status;
+    public void setColumnId(UUID columnId) {
+        this.columnId = columnId;
         updateLastModified();
     }
 
@@ -441,7 +444,7 @@ public class Note {
         }
         this.title = source.title;
         this.content = source.content;
-        this.status = source.status;
+        this.columnId = source.columnId;
         this.priority = source.priority;
         this.lastModifiedDate = source.lastModifiedDate;
         this.dueDate = source.dueDate;
@@ -497,7 +500,6 @@ public class Note {
         return "Note{" +
                 "id=" + id +
                 ", title='" + title + '\'' +
-                ", status=" + status +
                 ", priority=" + priority +
                 ", dueDate=" + dueDate +
                 '}';

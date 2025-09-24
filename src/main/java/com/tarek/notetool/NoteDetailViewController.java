@@ -1,6 +1,7 @@
 package com.tarek.notetool;
 
 import javafx.application.Platform;
+import javafx.animation.PauseTransition;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
@@ -8,7 +9,6 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Button;
@@ -18,7 +18,9 @@ import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.ListView;
+import javafx.scene.control.TabPane;
 import javafx.scene.layout.HBox;
 import javafx.geometry.Insets;
 import javafx.scene.image.ImageView;
@@ -36,6 +38,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.Pane;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ChoiceDialog;
@@ -57,6 +60,8 @@ import org.kordamp.ikonli.materialdesign2.MaterialDesignP;
 import com.vladsch.flexmark.html.HtmlRenderer;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.data.MutableDataSet;
+import com.vladsch.flexmark.ext.gfm.strikethrough.StrikethroughExtension;
+import com.vladsch.flexmark.ext.gfm.tasklist.TaskListExtension;
 
 import java.awt.Desktop;
 import java.io.File;
@@ -66,6 +71,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.stream.IntStream;
 import java.util.stream.Collectors;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.UUID;
 import java.util.HashSet;
@@ -86,10 +92,6 @@ public class NoteDetailViewController {
 
     @FXML
     private TextField titleField;
-    @FXML
-    private TabPane contentTabPane;
-    @FXML
-    private Tab previewTab;
     @FXML
     private TextArea contentArea;
     @FXML
@@ -161,12 +163,19 @@ public class NoteDetailViewController {
     private List<String> tempReferenceImagePaths;
     
     private ContextMenu noteSuggestionsPopup;
+    private ContextMenu imageSuggestionsPopup;
     private UUID noteToOpen = null;
     private final Parser markdownParser;
     private final HtmlRenderer markdownRenderer;
+    private PauseTransition markdownRenderDebounce;
 
     public NoteDetailViewController() {
         MutableDataSet options = new MutableDataSet();
+        // Enable GitHub Flavored Markdown extensions for task lists and strikethrough
+        options.set(Parser.EXTENSIONS, Arrays.asList(
+                TaskListExtension.create(),
+                StrikethroughExtension.create()
+        ));
         this.markdownParser = Parser.builder(options).build();
         this.markdownRenderer = HtmlRenderer.builder(options).build();
     }
@@ -175,9 +184,35 @@ public class NoteDetailViewController {
     private void initialize() {
         priorityComboBox.getItems().setAll(Note.Priority.values());
 
+        // --- Live Markdown Preview Setup ---
+        // Create a SplitPane to hold the editor and preview side-by-side.
+        SplitPane editorSplitPane = new SplitPane(contentArea, contentPreview);
+        editorSplitPane.setDividerPositions(0.5); // Start with a 50/50 split
+
+        // Find the TabPane that contains the contentArea and replace it entirely
+        // with the new SplitPane. This removes the old "Edit" and "Preview" tabs.
+        Platform.runLater(() -> {
+            Node current = contentArea;
+            while (current != null && !(current instanceof TabPane)) {
+                current = current.getParent();
+            }
+            if (current instanceof TabPane tabPane) {
+                if (tabPane.getParent() instanceof Pane parentPane) {
+                    int index = parentPane.getChildren().indexOf(tabPane);
+                    if (index != -1) {
+                        parentPane.getChildren().set(index, editorSplitPane);
+                    }
+                }
+            }
+        });
+
         // Listen for input in the goal field to show suggestions or add a new goal.
         noteSuggestionsPopup = new ContextMenu();
         newGoalField.textProperty().addListener((obs, oldVal, newVal) -> handleGoalInput(newVal));
+
+        // Listen for '@' in the main content area to suggest images.
+        imageSuggestionsPopup = new ContextMenu();
+        contentArea.textProperty().addListener((obs, oldVal, newVal) -> handleContentInput(newVal));
         newGoalField.setOnAction(e -> handleAddGoal()); // For pressing enter on plain text
 
 
@@ -268,14 +303,16 @@ public class NoteDetailViewController {
             setupReferencePaneDragAndDrop();
         }
 
-        // --- NEW: Markdown Preview Setup ---
-        if (previewTab != null) {
-            previewTab.setOnSelectionChanged(event -> {
-                if (previewTab.isSelected()) {
-                    renderMarkdown();
-                }
-            });
-        }
+        // --- Debounced Markdown Rendering ---
+        // This PauseTransition ensures we don't re-render the markdown on every single keystroke,
+        // which would be inefficient. Instead, it waits for a brief pause in typing.
+        markdownRenderDebounce = new PauseTransition(Duration.millis(300));
+        markdownRenderDebounce.setOnFinished(event -> renderMarkdown());
+
+        contentArea.textProperty().addListener((obs, oldVal, newVal) -> {
+            // Restart the debounce timer on every text change.
+            markdownRenderDebounce.playFromStart();
+        });
     }
 
     public void setDialogStage(Stage dialogStage) {
@@ -387,6 +424,9 @@ public class NoteDetailViewController {
         if (referenceImagesFlowPane != null) {
             refreshReferenceImagesPane();
         }
+
+        // Perform an initial render of the markdown content.
+        renderMarkdown();
         // Auto-focus the title field
         Platform.runLater(titleField::requestFocus);
     }
@@ -417,7 +457,9 @@ public class NoteDetailViewController {
     @FXML
     private void handleSave() {
         // Update the note copy with data from the form
-        noteCopy.setTitle(titleField.getText());
+        if (titleField.getText() != null) {
+            noteCopy.setTitle(titleField.getText());
+        }
         noteCopy.setContent(contentArea.getText());
         noteCopy.setPriority(priorityComboBox.getValue());
         if (dueDatePicker.getValue() != null) {
@@ -471,12 +513,11 @@ public class NoteDetailViewController {
      */
     @FXML
     private void handleClearCompletedGoals() {
-        if (goalsTreeView.getRoot() != null) {
-            boolean wasChanged = removeCompletedGoals(goalsTreeView.getRoot());
-            if (wasChanged) {
-                updateGoalsProgress();
-            }
-        }
+        TreeItem<Note.Goal> root = goalsTreeView.getRoot();
+        if (root == null) return;
+
+        boolean wasChanged = removeCompletedGoals(root);
+        if (wasChanged) updateGoalsProgress();
     }
 
     /**
@@ -485,6 +526,9 @@ public class NoteDetailViewController {
      * @return true if any goals were removed, false otherwise.
      */
     private boolean removeCompletedGoals(TreeItem<Note.Goal> parent) {
+        // --- FIX: Update the underlying data model ---
+        Note.Goal parentGoal = parent.getValue();
+
         if (parent == null || parent.getChildren().isEmpty()) {
             return false;
         }
@@ -505,6 +549,10 @@ public class NoteDetailViewController {
         }
         if (!childrenToRemove.isEmpty()) {
             parent.getChildren().removeAll(childrenToRemove);
+            wasChanged = true;
+        }
+
+        if (parentGoal != null && parentGoal.removeCompletedSubGoals()) {
             wasChanged = true;
         }
         return wasChanged;
@@ -576,57 +624,31 @@ public class NoteDetailViewController {
         String rawHtml = markdownRenderer.render(document);
 
         // This HTML uses CSS variables defined by the AtlantaFX theme, so it will adapt to light/dark mode.
+        // --- NEW: Process custom 'gallery://' links ---
+        // Replace our custom protocol with a valid file URI that the WebView can understand.
+        String galleryUri = MainApp.getGalleryDirectory().toUri().toString();
+        String processedHtml = rawHtml.replaceAll("src=\"gallery://([^\"]+)\"", "src=\"" + galleryUri + "$1\"");
+
+        // Get the path to the external CSS file.
+        String markdownCssPath = Objects.requireNonNull(getClass().getResource("/com/tarek/notetool/markdown-preview.css")).toExternalForm();
+
         String fullHtml = """
             <html>
                 <head>
-                    <style>
-                        body {
-                            font-family: -apple-system, "system-ui", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-                            background-color: var(-color-bg-default, #22272e);
-                            color: var(-color-fg-default, #adbac7);
-                            line-height: 1.6;
-                        }
-                        a { color: var(-color-accent-fg, #9370DB); text-decoration: none; }
-                        a:hover { text-decoration: underline; }
-                        h1, h2, h3, h4, h5, h6 {
-                            color: var(-color-header-fg, #adbac7);
-                            border-bottom: 1px solid var(-color-border-muted, #444c56);
-                            padding-bottom: 0.3em;
-                            margin-top: 24px;
-                            margin-bottom: 16px;
-                        }
-                        code {
-                            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-                            background-color: var(-color-neutral-muted, rgba(173, 186, 199, 0.1));
-                            padding: 0.2em 0.4em;
-                            margin: 0;
-                            font-size: 85%%;
-                            border-radius: 6px;
-                        }
-                        pre {
-                            background-color: var(-color-canvas-subtle, #2d333b);
-                            padding: 16px;
-                            overflow: auto;
-                            border-radius: 6px;
-                        }
-                        pre > code { padding: 0; margin: 0; font-size: 100%%; background-color: transparent; border: 0; }
-                        blockquote {
-                            border-left: 0.25em solid var(-color-border-default, #444c56);
-                            padding: 0 1em;
-                            color: var(-color-fg-muted, #768390);
-                        }
-                        table { border-collapse: collapse; width: 100%%; }
-                        th, td { border: 1px solid var(-color-border-muted, #444c56); padding: 8px 13px; }
-                        th { font-weight: bold; background-color: var(-color-canvas-subtle, #2d333b); }
-                        img { max-width: 100%%; height: auto; border-radius: 6px; }
-                        ul, ol { padding-left: 2em; }
-                    </style>
+                    <link rel="stylesheet" href="%s">
                 </head>
                 <body>
                     %s
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+                    <script>
+                        // Find all <pre><code> blocks and apply syntax highlighting
+                        document.addEventListener('DOMContentLoaded', (event) => {
+                            document.querySelectorAll('pre code').forEach((el) => { hljs.highlightElement(el); });
+                        });
+                    </script>
                 </body>
             </html>
-        """.formatted(rawHtml);
+        """.formatted(markdownCssPath, processedHtml);
 
         contentPreview.getEngine().loadContent(fullHtml);
     }
@@ -750,6 +772,69 @@ public class NoteDetailViewController {
             } catch (IOException e) {
                 showError("Attachment Failed", "Could not attach the file. Error: " + e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Handles text input in the main content area to provide image suggestions.
+     * When the user types '@' followed by text, it shows a popup with matching
+     * images from the gallery.
+     */
+    private void handleContentInput(String text) {
+        if (text == null || noteManager == null) {
+            imageSuggestionsPopup.hide();
+            return;
+        }
+
+        int caretPosition = contentArea.getCaretPosition();
+        if (caretPosition == 0) {
+            imageSuggestionsPopup.hide();
+            return;
+        }
+
+        // Find the start of the '@' query
+        int atIndex = text.lastIndexOf('@', caretPosition - 1);
+        if (atIndex == -1 || (atIndex > 0 && Character.isWhitespace(text.charAt(atIndex - 1)) == false)) {
+            imageSuggestionsPopup.hide();
+            return;
+        }
+
+        if (atIndex + 1 > caretPosition || caretPosition > text.length()) {
+            imageSuggestionsPopup.hide();
+            return;
+        }
+        String query = text.substring(atIndex + 1, caretPosition);
+
+        List<String> matchingImages = noteManager.getGalleryImagePaths().stream()
+                .filter(imageName -> imageName.toLowerCase().contains(query.toLowerCase()))
+                .limit(10) // Limit results for performance
+                .toList();
+
+        if (!matchingImages.isEmpty()) {
+            populateImageSuggestionsPopup(matchingImages, atIndex, caretPosition);
+            if (!imageSuggestionsPopup.isShowing()) {
+                // Show popup at the location of the '@' symbol
+                imageSuggestionsPopup.show(contentArea, Side.BOTTOM, 0, 0);
+            }
+        } else {
+            imageSuggestionsPopup.hide();
+        }
+    }
+
+    private void populateImageSuggestionsPopup(List<String> imageNames, int startIndex, int endIndex) {
+        imageSuggestionsPopup.getItems().clear();
+        for (String imageName : imageNames) {
+            MenuItem item = new MenuItem(imageName);
+            item.setOnAction(e -> {
+                // Create the markdown link for the image
+                String markdownLink = String.format("![%s](gallery://%s)", imageName, imageName);
+
+                // Replace the '@query' with the markdown link
+                contentArea.replaceText(startIndex, endIndex, markdownLink);
+
+                imageSuggestionsPopup.hide();
+            });
+            imageSuggestionsPopup.getItems().add(item);
         }
     }
 
@@ -1032,7 +1117,7 @@ public class NoteDetailViewController {
 
     private void showError(String header, String content) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.initOwner(dialogStage);
+        if (dialogStage != null) alert.initOwner(dialogStage);
         alert.setTitle("Error");
         alert.setHeaderText(header);
         alert.setContentText(content);
@@ -1198,6 +1283,8 @@ public class NoteDetailViewController {
                     // If parent was completed, un-complete it since we're adding a new task
                     if (parentGoal.isCompleted()) {
                         parentGoal.setCompleted(false);
+                        // Manually update the checkbox in the UI to reflect the model change
+                        checkBox.setSelected(false);
                         // Also need to update grandparents
                         updateParentCompletion(getTreeItem());
                     }
