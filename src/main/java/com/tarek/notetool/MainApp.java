@@ -91,28 +91,19 @@ public class MainApp extends Application {
         // Load the NoteManager data
         loadData();
 
-        // Load the FXML file for the main view
-        FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/tarek/notetool/main-view.fxml"));
-
-        // Manually create and set the controller. This bypasses the fx:controller attribute in the FXML,
-        // which was causing a ClassNotFoundException because it likely uses a relative name ("MainViewController")
-        // instead of the fully qualified name.
-        MainViewController controller = new MainViewController();
+        // Load the FXML file for the new welcome view
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/tarek/notetool/welcome-view.fxml"));
+        WelcomeViewController controller = new WelcomeViewController();
         loader.setController(controller);
-
         Parent root = loader.load();
 
-        // Pass the NoteManager to the now-initialized controller
-        controller.setNoteManager(noteManager);
+        // Pass the NoteManager and a reference to this MainApp instance to the controller
+        controller.setNoteManager(noteManager, this);
 
         // Set up the main window (Stage)
         stage.setTitle("Note Tool");
-        // Add the application icon. The .ico format is used for the launch4j executable and works here too.
         stage.getIcons().add(new Image(getClass().getResourceAsStream("/com/tarek/notetool/assets/icon.ico")));
-        Scene scene = new Scene(root, 1450, 900);
-
-        // Set up global shortcuts now that the scene is available
-        controller.setupShortcuts(scene);
+        Scene scene = new Scene(root, 1024, 768);
 
         // Add our custom purple accent override
         scene.getStylesheets().add(getClass().getResource("/com/tarek/notetool/purple-theme.css").toExternalForm());
@@ -121,12 +112,6 @@ public class MainApp extends Application {
         // Load and apply user-defined or default colors, overriding the CSS.
         ThemeManager.loadAndApplyTheme(scene);
         stage.setScene(scene);
-
-        // Show "What's New" dialog if this is a new version, before showing the main stage
-        if (VersionInfo.shouldShowWhatsNew()) {
-            showWhatsNewDialog(stage);
-            VersionInfo.updateLastSeenVersion();
-        }
 
         stage.show();
 
@@ -159,30 +144,6 @@ public class MainApp extends Application {
         }));
         autoSaveTimeline.setCycleCount(Timeline.INDEFINITE);
         autoSaveTimeline.play();
-    }
-
-    private void showWhatsNewDialog(Stage owner) {
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/tarek/notetool/whats-new-view.fxml"));
-            Parent page = loader.load();
-
-            // The controller is now loaded via FXML, get it from the loader
-            WhatsNewController controller = loader.getController();
-
-            Stage dialogStage = new Stage();
-            dialogStage.setTitle("What's New");
-            dialogStage.initModality(Modality.WINDOW_MODAL);
-            dialogStage.initOwner(owner);
-            Scene scene = new Scene(page);
-            // Apply the user's custom theme to the new dialog's scene
-            ThemeManager.loadAndApplyTheme(scene);
-            dialogStage.setScene(scene);
-
-            controller.setDialogStage(dialogStage);
-            dialogStage.showAndWait();
-        } catch (IOException e) {
-            System.err.println("Failed to load What's New dialog: " + e.getMessage());
-        }
     }
 
     /**
@@ -268,4 +229,40 @@ public class MainApp extends Application {
         }
     }
 
+    /**
+     * Opens a new window to display a specific board.
+     * @param board The board to display.
+     */
+    public void openBoardWindow(Board board) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/tarek/notetool/main-view.fxml"));
+            MainViewController controller = new MainViewController();
+            loader.setController(controller);
+            Parent root = loader.load();
+
+            // Pass the NoteManager and the specific board to the controller
+            controller.setNoteManager(noteManager);
+            controller.displayBoard(board);
+
+            Stage boardStage = new Stage();
+            boardStage.setTitle(board.getName() + " - Note Tool");
+            boardStage.getIcons().add(new Image(getClass().getResourceAsStream("/com/tarek/notetool/assets/icon.ico")));
+            Scene scene = new Scene(root, 1450, 900);
+
+            // Apply styles and theme
+            scene.getStylesheets().add(getClass().getResource("/com/tarek/notetool/purple-theme.css").toExternalForm());
+            scene.getStylesheets().add(getClass().getResource("/com/tarek/notetool/custom-styles.css").toExternalForm());
+            ThemeManager.loadAndApplyTheme(scene);
+
+            boardStage.setScene(scene);
+
+            // Set up global shortcuts for this new window
+            controller.setupShortcuts(scene);
+
+            boardStage.show();
+        } catch (IOException e) {
+            System.err.println("Failed to open board window: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 }
