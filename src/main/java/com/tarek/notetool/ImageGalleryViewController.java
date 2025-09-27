@@ -4,6 +4,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.fxml.FXML;
 import javafx.scene.Cursor;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Alert;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Tooltip;

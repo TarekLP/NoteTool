@@ -6,6 +6,7 @@ com\tarek\notetool\NoteDetailViewController$GoalTreeCell.class
 com\tarek\notetool\NoteManager$BoardDeserializer.class
 com\tarek\notetool\NoteManager$NoteManagerDeserializer$1.class
 com\tarek\notetool\NoteDetailViewController$2.class
+com\tarek\notetool\NoteManager$BoardDeserializer$4.class
 com\tarek\notetool\NoteManager$NoteBoardPair.class
 com\tarek\notetool\ThemeManager.class
 com\tarek\notetool\Note$Dependency.class
@@ -15,6 +16,7 @@ com\tarek\notetool\MainApp.class
 com\tarek\notetool\NoteDetailViewController$EditorResult.class
 com\tarek\notetool\NoteManager$BoardDeserializer$1.class
 com\tarek\notetool\NoteDetailViewController$SearchNoteDialog.class
+com\tarek\notetool\Column.class
 com\tarek\notetool\MainViewController$2.class
 com\tarek\notetool\Note$1.class
 com\tarek\notetool\NoteDetailViewController$3.class
@@ -28,7 +30,6 @@ com\tarek\notetool\PreferencesViewController$1.class
 com\tarek\notetool\NoteManager$BoardDeserializer$2.class
 com\tarek\notetool\VersionInfo.class
 com\tarek\notetool\Note$Goal.class
-com\tarek\notetool\Note$Status.class
 com\tarek\notetool\PreferencesViewController.class
 com\tarek\notetool\PreferencesViewController$2.class
 com\tarek\notetool\Note.class
@@ -41,5 +42,6 @@ com\tarek\notetool\Launcher.class
 com\tarek\notetool\MainViewController$QuickAddResult.class
 com\tarek\notetool\Note$DependencyType.class
 com\tarek\notetool\NoteManager$NoteManagerDeserializer$2.class
+com\tarek\notetool\NoteManager$BoardDeserializer$3.class
 com\tarek\notetool\NoteManager$LocalDateTimeAdapter.class
 com\tarek\notetool\Board.class

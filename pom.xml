@@ -34,6 +34,12 @@
             <artifactId>javafx-web</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <!-- JavaFX Swing (for clipboard image operations) -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
         <!-- Flexmark for Markdown rendering. Using 'flexmark-all' simplifies dependency management. -->
         <dependency>
             <groupId>com.vladsch.flexmark</groupId>
