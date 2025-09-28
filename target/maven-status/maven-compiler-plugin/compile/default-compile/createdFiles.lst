@@ -15,9 +15,9 @@ com\tarek\notetool\NoteDetailViewController$SearchNoteDialog$1.class
 com\tarek\notetool\MainApp.class
 com\tarek\notetool\NoteDetailViewController$EditorResult.class
 com\tarek\notetool\NoteManager$BoardDeserializer$1.class
+com\tarek\notetool\WelcomeViewController.class
 com\tarek\notetool\NoteDetailViewController$SearchNoteDialog.class
 com\tarek\notetool\Column.class
-com\tarek\notetool\MainViewController$2.class
 com\tarek\notetool\Note$1.class
 com\tarek\notetool\NoteDetailViewController$3.class
 com\tarek\notetool\WhatsNewController.class
@@ -34,12 +34,13 @@ com\tarek\notetool\PreferencesViewController.class
 com\tarek\notetool\PreferencesViewController$2.class
 com\tarek\notetool\Note.class
 com\tarek\notetool\NoteManager$NoteManagerDeserializer.class
+com\tarek\notetool\WelcomeViewController$1.class
 com\tarek\notetool\SearchResultsViewController.class
 com\tarek\notetool\SearchResultsViewController$1.class
 com\tarek\notetool\NoteDetailViewController$1.class
 com\tarek\notetool\User.class
 com\tarek\notetool\Launcher.class
-com\tarek\notetool\MainViewController$QuickAddResult.class
+com\tarek\notetool\MainViewController$NoteCard.class
 com\tarek\notetool\Note$DependencyType.class
 com\tarek\notetool\NoteManager$NoteManagerDeserializer$2.class
 com\tarek\notetool\NoteManager$BoardDeserializer$3.class

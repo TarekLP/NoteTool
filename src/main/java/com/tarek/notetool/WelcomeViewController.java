@@ -1,11 +1,13 @@
 package com.tarek.notetool;
 
 import javafx.application.Platform;
+import javafx.concurrent.Task;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Node;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -16,12 +18,14 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Pair;
 import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignA;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignD;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,6 +40,9 @@ public class WelcomeViewController {
     @FXML
     private VBox whatsNewPane;
 
+    @FXML
+    private VBox updateNotificationPane;
+
     private NoteManager noteManager;
     private MainApp mainApp;
 
@@ -44,6 +51,7 @@ public class WelcomeViewController {
         this.mainApp = mainApp;
         refreshBoardList();
         refreshRecentNotesList();
+        checkForUpdates();
     }
 
     @FXML
@@ -109,6 +117,104 @@ public class WelcomeViewController {
             whatsNewPane.setVisible(false);
             whatsNewPane.setManaged(false);
         }
+    }
+
+    private void checkForUpdates() {
+        // Run the check on a background thread to avoid freezing the UI
+        Task<Optional<String>> updateCheckTask = new Task<>() {
+            @Override
+            protected Optional<String> call() throws Exception {
+                System.out.println("Checking for updates...");
+                return UpdateChecker.getLatestVersionTag();
+            }
+        };
+
+        updateCheckTask.setOnSucceeded(event -> {
+            Optional<String> latestVersionOpt = updateCheckTask.getValue();
+            latestVersionOpt.ifPresent(latestVersion -> {
+                System.out.println("Latest version on GitHub: " + latestVersion);
+                System.out.println("Current version: " + VersionInfo.CURRENT_VERSION);
+
+                if (isNewer(latestVersion, VersionInfo.CURRENT_VERSION)) {
+                    System.out.println("A new version is available!");
+                    Platform.runLater(() -> showUpdateNotification(latestVersion));
+                } else {
+                    System.out.println("Application is up to date.");
+                }
+            });
+        });
+
+        updateCheckTask.setOnFailed(event -> {
+            System.err.println("Failed to check for updates.");
+            updateCheckTask.getException().printStackTrace();
+        });
+
+        new Thread(updateCheckTask).start();
+    }
+
+    private void showUpdateNotification(String newVersion) {
+        updateNotificationPane.getChildren().clear();
+        updateNotificationPane.setVisible(true);
+        updateNotificationPane.setManaged(true);
+
+        Label messageLabel = new Label("A new version (" + newVersion.replace("v","") + ") is available!");
+        messageLabel.setStyle("-fx-font-weight: bold;");
+
+        Button updateButton = new Button("Update and Restart");
+        updateButton.setGraphic(new FontIcon(MaterialDesignA.ARROW_DOWN_BOLD_HEXAGON_OUTLINE));
+        updateButton.setOnAction(e -> handleUpdate());
+
+        Button dismissButton = new Button("Dismiss");
+        dismissButton.setOnAction(e -> {
+            updateNotificationPane.setVisible(false);
+            updateNotificationPane.setManaged(false);
+        });
+
+        HBox buttonBox = new HBox(10, updateButton, dismissButton);
+        buttonBox.setAlignment(Pos.CENTER_LEFT);
+
+        VBox content = new VBox(5, messageLabel, buttonBox);
+        content.setPadding(new Insets(10));
+        content.getStyleClass().add("update-notification-content");
+
+        updateNotificationPane.getChildren().add(content);
+    }
+
+    private void handleUpdate() {
+        try {
+            // Path to the updater JAR. Assumes it's in the same directory.
+            String updaterJarPath = "AutoUpdater.jar";
+            File updaterJar = new File(updaterJarPath);
+
+            if (!updaterJar.exists()) {
+                showError("Updater Not Found", "The updater application (AutoUpdater.jar) was not found in the application directory.");
+                return;
+            }
+
+            // Launch the updater as a separate process
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", updaterJarPath, VersionInfo.CURRENT_VERSION);
+            pb.start();
+
+            // Exit the main application
+            Platform.exit();
+
+        } catch (IOException e) {
+            showError("Update Failed", "Could not start the updater process. Please try updating manually.\n\nError: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private boolean isNewer(String v1, String v2) {
+        String[] parts1 = v1.replace("v", "").split("\\.");
+        String[] parts2 = v2.replace("v", "").split("\\.");
+        int length = Math.max(parts1.length, parts2.length);
+        for (int i = 0; i < length; i++) {
+            int part1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
+            int part2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
+            if (part1 > part2) return true;
+            if (part1 < part2) return false;
+        }
+        return false;
     }
 
     private void refreshBoardList() {
