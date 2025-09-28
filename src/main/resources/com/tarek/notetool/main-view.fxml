@@ -25,7 +25,7 @@
                   </Label>
                   <TextField fx:id="searchField" HBox.hgrow="ALWAYS" promptText="Search notes..." />
                   <ToggleButton fx:id="showArchivedToggle" mnemonicParsing="false" text="Archived" />
-                  <ToggleButton fx:id="imageGalleryToggle" mnemonicParsing="false" text="Gallery" />
+                  <ToggleButton fx:id="imageGalleryToggle" mnemonicParsing="false" />
                   <Button fx:id="preferencesButton" mnemonicParsing="false" />
                </children>
                <padding>

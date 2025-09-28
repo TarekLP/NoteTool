@@ -48,6 +48,7 @@ public class NoteManager {
     private final Set<String> allTags;
     private final List<String> galleryImagePaths;
     private transient boolean isDirty = false;
+    private transient Set<Path> loadedBoardFiles = new HashSet<>();
 
     private static final int MAX_RECENT_NOTES = 10;
 
@@ -329,7 +330,7 @@ public class NoteManager {
      */
     public static NoteManager loadFromFile(String filePath) throws IOException {
         File file = new File(filePath);
-        if (!file.exists() || file.length() == 0) {
+        if (!file.exists() || file.length() == 0) { // Check for empty file
             throw new IOException("Data file not found or is empty, a new one will be created.");
         }
 
@@ -348,6 +349,47 @@ public class NoteManager {
         } catch (Exception e) {
             // Catch broader exceptions during JSON parsing to prevent application crash on corrupt file
             throw new IOException("Failed to parse data file. It might be corrupted. " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Exports a single board to a JSON file.
+     * @param boardName The name of the board to export.
+     * @param file The file to save the board to.
+     * @throws IOException if the board doesn't exist or a save error occurs.
+     */
+    public void exportBoard(String boardName, File file) throws IOException {
+        Board board = getBoard(boardName)
+                .orElseThrow(() -> new IOException("Board '" + boardName + "' not found."));
+
+        Gson gson = getGson();
+        try (Writer writer = new FileWriter(file)) {
+            gson.toJson(board, writer);
+        }
+    }
+
+    /**
+     * Imports a single board from a JSON file.
+     * If a board with the same name already exists, it will be renamed.
+     * @param file The file to import the board from.
+     * @throws IOException if a read or parse error occurs.
+     */
+    public void importBoard(File file) throws IOException {
+        Gson gson = getGson();
+        try (Reader reader = new FileReader(file)) {
+            Board importedBoard = gson.fromJson(reader, Board.class);
+            if (importedBoard == null || importedBoard.getName() == null) {
+                throw new IOException("The file does not contain a valid board.");
+            }
+
+            String boardName = importedBoard.getName();
+            int copyIndex = 1;
+            while (boards.containsKey(boardName)) {
+                boardName = importedBoard.getName() + " (Import " + copyIndex++ + ")";
+            }
+            importedBoard.setName(boardName);
+            boards.put(boardName, importedBoard);
+            markAsDirty();
         }
     }
 
@@ -390,18 +432,15 @@ public class NoteManager {
             }
         }
 
-        // 3. Delete obsolete board files for boards that were renamed or deleted
-        if (Files.exists(boardsDir)) {
-            try (Stream<Path> stream = Files.list(boardsDir)) {
-                stream.filter(file -> file.toString().endsWith(".json") && !savedBoardFiles.contains(file))
-                        .forEach(file -> {
-                            try {
-                                Files.delete(file);
-                                System.out.println("Deleted obsolete board file: " + file);
-                            } catch (IOException e) {
-                                System.err.println("Failed to delete obsolete board file: " + file);
-                            }
-                        });
+        // 3. Delete obsolete board files that were loaded but are no longer present.
+        for (Path oldFile : loadedBoardFiles) {
+            if (!savedBoardFiles.contains(oldFile)) {
+                try {
+                    Files.deleteIfExists(oldFile);
+                    System.out.println("Deleted obsolete board file: " + oldFile);
+                } catch (IOException e) {
+                    System.err.println("Failed to delete obsolete board file: " + oldFile);
+                }
             }
         }
 
@@ -442,6 +481,7 @@ public class NoteManager {
                         .forEach(boardFile -> {
                             try (Reader reader = new FileReader(boardFile.toFile())) {
                                 Board board = gson.fromJson(reader, Board.class);
+                                manager.loadedBoardFiles.add(boardFile); // Track loaded files
                                 if (board != null && board.getName() != null) {
                                     manager.boards.put(board.getName(), board);
                                 }

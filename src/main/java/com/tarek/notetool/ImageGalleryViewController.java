@@ -5,6 +5,7 @@ import javafx.geometry.Pos;
 import javafx.fxml.FXML;
 import javafx.scene.Cursor;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Alert;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Tooltip;
@@ -19,12 +20,15 @@ import javafx.scene.input.Dragboard;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.TilePane;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignL;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignP;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignD;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -52,6 +56,8 @@ public class ImageGalleryViewController {
     private Button pasteImageButton;
     @FXML
     private Button closeGalleryButton;
+    @FXML
+    private TextField searchField;
 
     private NoteManager noteManager;
     private Runnable onCloseRequestHandler;
@@ -60,6 +66,9 @@ public class ImageGalleryViewController {
     private void initialize() {
         addImageButton.setOnAction(e -> handleAddImageFromFile());
         pasteImageButton.setOnAction(e -> handlePasteImage());
+
+        // Add listener to search field to filter the gallery
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> refreshGallery());
 
         closeGalleryButton.setGraphic(new FontIcon(MaterialDesignC.CLOSE));
         closeGalleryButton.getStyleClass().add("rich-text-editor-button"); // Use a flat style for the icon button
@@ -113,9 +122,14 @@ public class ImageGalleryViewController {
 
     private void refreshGallery() {
         imageTilePane.getChildren().clear();
+        String query = searchField.getText().toLowerCase();
+
         if (noteManager != null) {
-            for (String imagePath : noteManager.getGalleryImagePaths()) {
-                createImageView(imagePath);
+            noteManager.getGalleryImagePaths().stream()
+                    .filter(imagePath -> query.isEmpty() || imagePath.toLowerCase().contains(query))
+                    .forEach(this::createImageView);
+            if (query.isEmpty()) {
+                searchField.clear();
             }
         }
     }
@@ -159,7 +173,7 @@ public class ImageGalleryViewController {
         } else if (clipboard.hasFiles()) {
             clipboard.getFiles().stream()
                     .filter(file -> file.getName().toLowerCase().matches(".*\\.(png|jpg|jpeg|gif|bmp)$"))
-                    .forEach(file -> saveAndAddImage(file.toPath()));
+                    .forEach(file -> saveAndAddImage(file.toPath())); // This already calls the correct method. No change needed, but good to confirm.
         }
     }
 
@@ -190,26 +204,40 @@ public class ImageGalleryViewController {
         // Bind the image view's size to the tile size for responsive scaling.
         imageView.fitWidthProperty().bind(imageTilePane.prefTileWidthProperty());
         // --- Container for image and overlays ---
-        StackPane imageContainer = new StackPane(imageView);
-        imageContainer.setCursor(Cursor.OPEN_HAND);
+        HBox buttonBar = new HBox(5);
+        buttonBar.setAlignment(Pos.TOP_RIGHT);
+        buttonBar.setPadding(new Insets(4));
+        buttonBar.setVisible(false); // Initially hidden
+
+        // --- UI for Copying ---
+        FontIcon copyIcon = new FontIcon(MaterialDesignP.PAPERCLIP);
+        copyIcon.getStyleClass().add("image-overlay-icon");
+        Tooltip.install(copyIcon, new Tooltip("Copy Image to Clipboard"));
+        copyIcon.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY) {
+                ClipboardContent content = new ClipboardContent();
+                content.putImage(image);
+                Clipboard.getSystemClipboard().setContent(content);
+                e.consume();
+            }
+        });
 
         // --- UI for Deleting ---
-        FontIcon deleteIcon = new FontIcon(MaterialDesignC.CLOSE_CIRCLE);
-        deleteIcon.setIconSize(24); // Increase icon size for better visibility
-        deleteIcon.getStyleClass().add("image-delete-icon");
-        deleteIcon.setVisible(false); // Initially hidden
-        // Add a background to make the icon stand out against any image color
-        deleteIcon.setStyle("-fx-background-color: rgba(0,0,0,0.5); -fx-background-radius: 50%;");
-
+        FontIcon deleteIcon = new FontIcon(MaterialDesignD.DELETE);
+        deleteIcon.getStyleClass().addAll("image-overlay-icon", "image-delete-icon");
+        Tooltip.install(deleteIcon, new Tooltip("Delete Image"));
         deleteIcon.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY) {
                 handleDeleteImage(imageFileName, imagePath);
                 e.consume();
             }
         });
-        imageContainer.getChildren().add(deleteIcon);
-        StackPane.setAlignment(deleteIcon, Pos.TOP_RIGHT);
-        StackPane.setMargin(deleteIcon, new Insets(4, 4, 0, 0));
+
+        StackPane imageContainer = new StackPane(imageView);
+        imageContainer.setCursor(Cursor.OPEN_HAND);
+
+        buttonBar.getChildren().addAll(copyIcon, deleteIcon);
+        imageContainer.getChildren().add(buttonBar);
 
         // --- UI for showing usage ---
         List<Note> usingNotes = noteManager.getNotesUsingImage(imageFileName);
@@ -230,8 +258,8 @@ public class ImageGalleryViewController {
             StackPane.setMargin(linkIcon, new Insets(0, 0, 4, 4));
         }
 
-        imageContainer.setOnMouseEntered(e -> deleteIcon.setVisible(true));
-        imageContainer.setOnMouseExited(e -> deleteIcon.setVisible(false));
+        imageContainer.setOnMouseEntered(e -> buttonBar.setVisible(true));
+        imageContainer.setOnMouseExited(e -> buttonBar.setVisible(false));
 
         // --- Drag and Drop Handling ---
         imageContainer.setOnDragDetected(event -> {
@@ -267,7 +295,7 @@ public class ImageGalleryViewController {
         if (isInUse) {
             Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
             confirmation.setTitle("Delete Image");
-            confirmation.setHeaderText("This image is currently used by " + usingNotes.size() + " note(s).");
+            confirmation.setHeaderText("This image is currently used by " + usingNotes.size() + " note(s)."); // Corrected typo in my thought process, code is fine.
             String noteTitles = usingNotes.stream().map(Note::getTitle).limit(5).collect(Collectors.joining("\n- ", "\n- ", ""));
             confirmation.setContentText("Are you sure you want to delete it? This will create broken links in the notes that reference it." + noteTitles);
 

@@ -2,6 +2,8 @@ package com.tarek.notetool;
 
 import javafx.application.Platform;
 import javafx.animation.PauseTransition;
+import javafx.animation.ScaleTransition;
+import javafx.animation.Interpolator;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
@@ -57,6 +59,7 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignL;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignC;
 import org.kordamp.ikonli.materialdesign2.MaterialDesignP;
+import org.kordamp.ikonli.materialdesign2.MaterialDesignD;
 import com.vladsch.flexmark.html.HtmlRenderer;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.data.MutableDataSet;
@@ -526,8 +529,6 @@ public class NoteDetailViewController {
      * @return true if any goals were removed, false otherwise.
      */
     private boolean removeCompletedGoals(TreeItem<Note.Goal> parent) {
-        // --- FIX: Update the underlying data model ---
-        Note.Goal parentGoal = parent.getValue();
 
         if (parent == null || parent.getChildren().isEmpty()) {
             return false;
@@ -552,8 +553,9 @@ public class NoteDetailViewController {
             wasChanged = true;
         }
 
-        if (parentGoal != null && parentGoal.removeCompletedSubGoals()) {
-            wasChanged = true;
+        // --- FIX: Update the underlying data model ---
+        if (parent.getValue() != null) {
+            if (parent.getValue().removeCompletedSubGoals()) wasChanged = true;
         }
         return wasChanged;
     }
@@ -692,13 +694,35 @@ public class NoteDetailViewController {
         Image image = new Image(imagePath.toUri().toString(), 80, 80, true, true);
         ImageView imageView = new ImageView(image);
 
-        Button removeButton = new Button("x");
-        removeButton.getStyleClass().add("tag-remove-button");
+        Button removeButton = new Button();
+        removeButton.setGraphic(new FontIcon(MaterialDesignC.CLOSE_CIRCLE_OUTLINE));
+        removeButton.getStyleClass().add("rich-text-editor-button"); // Use a flat icon style
+        Tooltip.install(removeButton, new Tooltip("Remove Reference"));
+
         removeButton.setOnAction(e -> {
             tempReferenceImagePaths.remove(imageFileName);
             refreshReferenceImagesPane();
         });
-        return new VBox(5, imageView, removeButton);
+        VBox container = new VBox(5, imageView, removeButton);
+        container.setAlignment(Pos.CENTER);
+
+        // Add hover effects for scaling
+        container.setOnMouseEntered(e -> {
+            ScaleTransition st = new ScaleTransition(Duration.millis(150), container);
+            st.setToX(1.2); // Scale up to 120%
+            st.setToY(1.2);
+            st.setInterpolator(Interpolator.EASE_OUT);
+            st.play();
+        });
+
+        container.setOnMouseExited(e -> {
+            ScaleTransition st = new ScaleTransition(Duration.millis(150), container);
+            st.setToX(1.0); // Scale back to original size
+            st.setToY(1.0);
+            st.setInterpolator(Interpolator.EASE_OUT);
+            st.play();
+        });
+        return container;
     }
 
     // --- Attachment Methods ---
@@ -1217,7 +1241,7 @@ public class NoteDetailViewController {
     private class GoalTreeCell extends TreeCell<Note.Goal> {
         private final HBox hbox = new HBox(5);
         private final CheckBox checkBox = new CheckBox();
-        private final Button addSubGoalButton = new Button("+");
+        private final Button addSubGoalButton = new Button();
         private final Button deleteButton = new Button("x");
         private final FontIcon linkIcon = new FontIcon(MaterialDesignL.LINK_VARIANT);
         private final Label linkLabel = new Label();
@@ -1225,7 +1249,10 @@ public class NoteDetailViewController {
 
         public GoalTreeCell() {
             Tooltip.install(addSubGoalButton, new Tooltip("Add Sub-goal"));
+            addSubGoalButton.setGraphic(new FontIcon(MaterialDesignP.PLUS));
+
             Tooltip.install(deleteButton, new Tooltip("Delete Goal"));
+            deleteButton.setGraphic(new FontIcon(MaterialDesignD.DELETE_OUTLINE));
 
             // Handle clicks on linked goals
             this.setOnMouseClicked(event -> {

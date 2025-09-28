@@ -118,6 +118,9 @@ public class MainViewController {
     private Board currentBoard;
     private final Map<UUID, VBox> noteContainersMap = new HashMap<>();
 
+    // A reusable placeholder for drag-and-drop operations.
+    private final Region dropPlaceholder = new Region();
+
     private ImageGalleryViewController imageGalleryViewController;    public void setNoteManager(NoteManager noteManager) {
         this.noteManager = noteManager;        // Pass the manager to the gallery controller
         if (imageGalleryViewController != null) imageGalleryViewController.setNoteManager(noteManager);
@@ -236,11 +239,40 @@ public class MainViewController {
         imageGalleryToggle.setGraphic(new FontIcon(MaterialDesignI.IMAGE_MULTIPLE_OUTLINE));
         Tooltip.install(imageGalleryToggle, new Tooltip("Toggle Image Gallery"));
         imageGalleryToggle.setOnAction(e -> handleToggleImageGallery());
+
+        // Initialize the drop placeholder style
+        dropPlaceholder.getStyleClass().add("note-card-drop-placeholder");
         setupImageGallery();
     }
 
     private void handleToggleImageGallery() {
-        // ... (code is unchanged)
+        boolean shouldShow = imageGalleryToggle.isSelected();
+
+        // The pane must be visible to be animated. We'll control its final visibility
+        // in the setOnFinished handler.
+        imageGalleryPane.setVisible(true);
+
+        TranslateTransition tt = new TranslateTransition(Duration.millis(250), imageGalleryPane);
+        tt.setInterpolator(Interpolator.EASE_BOTH);
+
+        if (shouldShow) {
+            // Refresh gallery content just before showing
+            if (imageGalleryViewController != null) {
+                imageGalleryViewController.setNoteManager(this.noteManager);
+            }
+            tt.setToX(0); // Animate to its final on-screen position
+        } else {
+            tt.setToX(imageGalleryPane.getWidth()); // Animate off-screen to the right
+        }
+
+        // Set the final state after the animation completes to prevent inconsistencies.
+        tt.setOnFinished(e -> {
+            imageGalleryPane.setVisible(shouldShow);
+            // Snap to the final position in case the animation was interrupted.
+            imageGalleryPane.setTranslateX(shouldShow ? 0 : imageGalleryPane.getWidth());
+        });
+
+        tt.play();
     }
 
     // ... (rest of the file from createColumn onwards is largely the same, but with some methods removed)
@@ -260,7 +292,9 @@ public class MainViewController {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        MenuButton optionsButton = new MenuButton();
+        // Initialize with empty text to prevent a NullPointerException in some JavaFX versions
+        // where the skin can be created before the graphic is set.
+        MenuButton optionsButton = new MenuButton("");
         optionsButton.setGraphic(new FontIcon(MaterialDesignD.DOTS_VERTICAL));
         Tooltip.install(optionsButton, new Tooltip("Column Options"));
         optionsButton.getStyleClass().add("rich-text-editor-button");
@@ -437,23 +471,7 @@ public class MainViewController {
      * @return A VBox containing the note card UI.
      */
     private VBox createNoteCard(Note note) {
-        Label title = new Label(note.getTitle());
-        title.setWrapText(true);
-
-        HBox detailsBox = buildCardDetails(note);
-        FlowPane tagsPane = buildTagsFlowPane(note);
-
-        VBox card = new VBox(5, title, detailsBox, tagsPane);
-        card.setPadding(new Insets(10));
-        card.setUserData(note); // Associate the note object with the UI card
-
-        setCardStyleClass(card, note);
-
-        setupCardContextMenu(card, note);
-        setupCardClickHandling(card, note);
-        setupCardDragAndDrop(card, note);
-
-        return card;
+        return new NoteCard(note);
     }
 
     /**
@@ -670,31 +688,38 @@ public class MainViewController {
      * @param note The data object for the note.
      */
     private void setupDragSourceForCard(VBox card, Note note) {
-        DropShadow shadow = new DropShadow();
-        shadow.setColor(Color.web("#9370DB", 0.7)); // Use accent color
-        shadow.setRadius(15);
-        shadow.setSpread(0.1);
-
         card.setOnDragDetected(event -> {
             if (event.getButton() != MouseButton.PRIMARY) return;
 
             Dragboard db = card.startDragAndDrop(TransferMode.MOVE);
             ClipboardContent content = new ClipboardContent();
             content.putString(note.getId().toString());
-            db.setContent(content);
 
             // Use a snapshot of the card as the drag view
             WritableImage snapshot = card.snapshot(new SnapshotParameters(), null);
             db.setDragView(snapshot);
+            db.setContent(content);
 
-            card.setEffect(shadow);
+            // --- IMPROVED ANIMATION: Fade out the source card ---
+            // This makes it clear the card is being "lifted" from its position.
+            FadeTransition ft = new FadeTransition(Duration.millis(200), card);
+            ft.setFromValue(1.0);
+            ft.setToValue(0.4);
+            ft.play();
+
             event.consume();
         });
 
         card.setOnDragDone(event -> {
-            card.setEffect(null);
-            // Clear any lingering drop indicators on this card, in case the drag was cancelled.
-            card.getStyleClass().removeAll("note-card-drop-above", "note-card-drop-below");
+            // --- IMPROVED ANIMATION: Fade the card back in ---
+            // If the move was not successful (drag cancelled), fade it back in its original spot.
+            // If it was successful, the card is removed and re-added, so this fade-in won't be visible on the old card.
+            if (!event.isDropCompleted()) {
+                FadeTransition ft = new FadeTransition(Duration.millis(200), card);
+                ft.setFromValue(0.4);
+                ft.setToValue(1.0);
+                ft.play();
+            }
             event.consume();
         });
     }
@@ -706,22 +731,24 @@ public class MainViewController {
      */
     private void setupDropTargetForCard(VBox card) {
         card.setOnDragOver(event -> {
-            if (event.getGestureSource() != card && event.getDragboard().hasString()) {
+            if (event.getGestureSource() != card && event.getDragboard().hasString() && card.getParent() instanceof VBox) {
                 event.acceptTransferModes(TransferMode.MOVE);
 
-                // Update visual indicator based on cursor position
-                card.getStyleClass().removeAll("note-card-drop-above", "note-card-drop-below");
+                VBox container = (VBox) card.getParent();
+                container.getChildren().remove(dropPlaceholder);
+
+                int index = container.getChildren().indexOf(card);
                 if (event.getY() < card.getHeight() / 2) {
-                    card.getStyleClass().add("note-card-drop-above");
+                    container.getChildren().add(index, dropPlaceholder);
                 } else {
-                    card.getStyleClass().add("note-card-drop-below");
+                    container.getChildren().add(index + 1, dropPlaceholder);
                 }
             }
             event.consume();
         });
 
         card.setOnDragExited(event -> {
-            card.getStyleClass().removeAll("note-card-drop-above", "note-card-drop-below");
+            if (card.getParent() instanceof VBox) ((VBox) card.getParent()).getChildren().remove(dropPlaceholder);
             event.consume();
         });
 
@@ -729,8 +756,11 @@ public class MainViewController {
             Dragboard db = event.getDragboard();
             boolean success = false;
             if (db.hasString()) {
+                // Clean up placeholder before dropping
+                if (card.getParent() instanceof VBox) ((VBox) card.getParent()).getChildren().remove(dropPlaceholder);
+
                 UUID draggedNoteId = UUID.fromString(db.getString());
-                Note targetNote = (Note) card.getUserData();
+                Note targetNote = ((NoteCard) card).getNote();
                 int targetIndex = ((VBox) card.getParent()).getChildren().indexOf(card);
                 int newIndex = (event.getY() < card.getHeight() / 2) ? targetIndex : targetIndex + 1;
 
@@ -918,7 +948,7 @@ public class MainViewController {
 
                 if (oldContainer != null && newContainer != null) {
                     Optional<Node> cardToMoveOpt = oldContainer.getChildren().stream()
-                            .filter(nodeUI -> noteToMove.equals(nodeUI.getUserData()))
+                            .filter(nodeUI -> nodeUI instanceof NoteCard && noteToMove.equals(((NoteCard) nodeUI).getNote()))
                             .findFirst();
 
                     cardToMoveOpt.ifPresent(cardNode -> {
@@ -943,6 +973,10 @@ public class MainViewController {
                                 } else {
                                     newContainer.getChildren().add(cardNode); // Fallback to adding at the end
                                 }
+
+                                // --- NEW: Add "physics" animation on drop ---
+                                animateCardDrop(cardNode, oldContainer, newContainer);
+
                             }
                             updateColumnCounts();
                             noteManager.markAsDirty();
@@ -951,6 +985,32 @@ public class MainViewController {
                 }
             });
         });
+    }
+
+    /**
+     * Animates a note card when it's dropped into a new position, giving it a "settle" effect.
+     * The animation direction (vertical or horizontal) depends on whether the card moved between columns.
+     *
+     * @param cardNode The UI node of the card that was moved.
+     * @param oldContainer The column VBox the card was moved from.
+     * @param newContainer The column VBox the card was moved to.
+     */
+    private void animateCardDrop(Node cardNode, VBox oldContainer, VBox newContainer) {
+        boolean movedColumns = oldContainer != newContainer;
+
+        // Temporarily translate the card from its new final position.
+        // If it moved columns, it comes from the side. If not, it comes from above/below.
+        cardNode.setTranslateX(movedColumns ? -30 : 0);
+        cardNode.setTranslateY(movedColumns ? 0 : -20);
+
+        // Create a transition to animate it back to its final layout position (0,0).
+        TranslateTransition tt = new TranslateTransition(Duration.millis(450), cardNode);
+        tt.setToX(0);
+        tt.setToY(0);
+
+        // Use an EASE_OUT interpolator to create a nice "settle" or "overshoot" effect.
+        tt.setInterpolator(Interpolator.EASE_OUT);
+        tt.play();
     }
 
     private void handleRenameColumn(Column column) {
@@ -1043,7 +1103,7 @@ public class MainViewController {
                 VBox container = noteContainersMap.get(note.getColumnId());
                 if (container != null) {
                     Optional<Node> cardToRemove = container.getChildren().stream()
-                            .filter(nodeUI -> note.equals(nodeUI.getUserData()))
+                            .filter(nodeUI -> nodeUI instanceof NoteCard && note.equals(((NoteCard) nodeUI).getNote()))
                             .findFirst();
 
                     cardToRemove.ifPresent(cardNode -> {
@@ -1074,16 +1134,15 @@ public class MainViewController {
         );
     }
 
-    private void requestWindowAttention() {
-        Stage stage = (Stage) boardScrollPane.getScene().getWindow();
-        if (stage != null) {
-            stage.requestFocus();
+    private void initAlertOwner(Alert alert) {
+        if (boardScrollPane != null && boardScrollPane.getScene() != null) {
+            alert.initOwner(boardScrollPane.getScene().getWindow());
         }
     }
 
     private void showError(String header, String content) {
-        requestWindowAttention();
         Alert alert = new Alert(Alert.AlertType.ERROR);
+        initAlertOwner(alert);
         alert.setTitle("Error");
         alert.setHeaderText(header);
         alert.setContentText(content);
@@ -1091,8 +1150,8 @@ public class MainViewController {
     }
 
     private void showInfo(String header, String content) {
-        requestWindowAttention();
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        initAlertOwner(alert);
         alert.setTitle("Information");
         alert.setHeaderText(header);
         alert.setContentText(content);
@@ -1235,5 +1294,35 @@ public class MainViewController {
         }
         // The getSubGoals() method on the Goal class returns an unmodifiable list, which is never null.
         return goal.getSubGoals().stream().anyMatch(this::goalHasLinks);
+    }
+
+    /**
+     * An inner class representing the UI for a single Note.
+     * This encapsulates all the logic for building, styling, and handling events for a note card.
+     */
+    private class NoteCard extends VBox {
+        private final Note note;
+
+        public NoteCard(Note note) {
+            this.note = note;
+
+            // 1. Build UI components
+            Label title = new Label(note.getTitle());
+            title.setWrapText(true);
+            HBox detailsBox = buildCardDetails(note);
+            FlowPane tagsPane = buildTagsFlowPane(note);
+
+            // 2. Configure this VBox
+            this.setSpacing(5);
+            this.setPadding(new Insets(10));
+            this.getChildren().addAll(title, detailsBox, tagsPane);
+
+            // 3. Apply styles and event handlers
+            setCardStyleClass(this, note);
+            setupCardContextMenu(this, note);
+            setupCardClickHandling(this, note);
+            setupCardDragAndDrop(this, note);
+        }
+        public Note getNote() { return note; }
     }
 }

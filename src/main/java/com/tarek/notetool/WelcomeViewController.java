@@ -59,12 +59,21 @@ public class WelcomeViewController {
         MenuItem openBoardItem = new MenuItem("Open Board");
         openBoardItem.setOnAction(e -> handleOpenBoard());
 
+        MenuItem exportBoardItem = new MenuItem("Export Board...");
+        exportBoardItem.setOnAction(e -> handleExportBoard());
+
         MenuItem deleteBoardItem = new MenuItem("Delete Board");
         deleteBoardItem.setGraphic(new FontIcon(MaterialDesignD.DELETE_OUTLINE));
         deleteBoardItem.setStyle("-fx-text-fill: -color-danger-fg;");
         deleteBoardItem.setOnAction(e -> handleDeleteBoard());
 
-        boardContextMenu.getItems().addAll(openBoardItem, new SeparatorMenuItem(), deleteBoardItem);
+        boardContextMenu.getItems().addAll(
+                openBoardItem,
+                new SeparatorMenuItem(),
+                exportBoardItem,
+                new SeparatorMenuItem(),
+                deleteBoardItem
+        );
         boardListView.setContextMenu(boardContextMenu);
 
         // --- Recent Notes List Setup ---
@@ -136,6 +145,42 @@ public class WelcomeViewController {
                 }
             }
         });
+    }
+
+    @FXML
+    private void handleImportBoard() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Import Board");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("NoteTool Board File", "*.json"));
+        File file = fileChooser.showOpenDialog(boardListView.getScene().getWindow());
+
+        if (file != null) {
+            try {
+                noteManager.importBoard(file);
+                refreshBoardList();
+            } catch (IOException e) {
+                showError("Import Failed", "Could not import the board from the selected file.\n\nError: " + e.getMessage());
+            }
+        }
+    }
+
+    private void handleExportBoard() {
+        String selectedBoardName = boardListView.getSelectionModel().getSelectedItem();
+        if (selectedBoardName == null) return;
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Export Board");
+        fileChooser.setInitialFileName(selectedBoardName.replaceAll("[^a-zA-Z0-9.\\-]", "_") + ".json");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("NoteTool Board File", "*.json"));
+        File file = fileChooser.showSaveDialog(boardListView.getScene().getWindow());
+
+        if (file != null) {
+            try {
+                noteManager.exportBoard(selectedBoardName, file);
+            } catch (IOException e) {
+                showError("Export Failed", "Could not export the board.\n\nError: " + e.getMessage());
+            }
+        }
     }
 
     private void handleDeleteBoard() {

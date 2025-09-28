@@ -63,11 +63,9 @@ public class MainApp extends Application {
             baseDir = Paths.get(System.getProperty("user.home"));
         }
 
-        return baseDir.resolve(Paths.get(
-                "Documents",
-                "TarekPrograms",
-                "NoteTool"
-        ));
+        return baseDir.resolve("Documents")
+                .resolve("TarekPrograms")
+                .resolve("NoteTool");
     }
 
     @Override
