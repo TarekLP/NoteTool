@@ -1,12 +1,17 @@
 package com.tarek.notetool;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import atlantafx.base.theme.PrimerDark;
 import atlantafx.base.theme.PrimerLight;
+import javafx.application.Platform;
 import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.scene.control.Alert;
 import javafx.scene.Scene;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Button;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.ComboBox;
@@ -17,11 +22,14 @@ import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
+import java.io.*;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import javafx.scene.paint.Color;
 
@@ -57,6 +65,15 @@ public class PreferencesViewController {
     @FXML
     private Button resetColorsButton;
 
+    @FXML
+    private Button checkForUpdatesButton;
+
+    @FXML
+    private Button importThemeButton;
+
+    @FXML
+    private Button exportThemeButton;
+
 
     private Stage dialogStage;
     private Scene mainScene;
@@ -83,6 +100,17 @@ public class PreferencesViewController {
 
         // --- Color Customizer Setup ---
         initializeColorPickers();
+
+        // --- Update Button ---
+        if (checkForUpdatesButton != null) {
+            checkForUpdatesButton.setOnAction(e -> handleCheckForUpdates());
+        } else {
+            System.err.println("ERROR: checkForUpdatesButton is not injected. Please ensure your preferences-view.fxml contains a Button with fx:id=\"checkForUpdatesButton\".");
+        }
+
+        // --- Theme Import/Export ---
+        importThemeButton.setOnAction(e -> handleImportTheme());
+        exportThemeButton.setOnAction(e -> handleExportTheme());
 
         // --- Users Tab ---
         newUserField.setOnAction(e -> handleAddUser());
@@ -296,5 +324,113 @@ public class PreferencesViewController {
     private void handleClose() {
         saveColorSettings();
         dialogStage.close();
+    }
+
+    @FXML
+    private void handleImportTheme() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Import Theme");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Theme File", "*.json"));
+        File file = fileChooser.showOpenDialog(dialogStage);
+
+        if (file != null) {
+            Gson gson = new Gson();
+            try (Reader reader = new FileReader(file)) {
+                ThemeManager.ThemeData themeData = gson.fromJson(reader, ThemeManager.ThemeData.class);
+                if (themeData != null) {
+                    // Update color pickers, which will trigger live updates
+                    accentFgColorPicker.setValue(Color.web(themeData.accentFg()));
+                    accentEmphasisColorPicker.setValue(Color.web(themeData.accentEmphasis()));
+                    accentMutedColorPicker.setValue(Color.web(themeData.accentMuted()));
+                    accentSubtleColorPicker.setValue(Color.web(themeData.accentSubtle()));
+
+                    // Save the newly imported theme
+                    saveColorSettings();
+                    showInfo("Import Successful", "The theme '" + file.getName() + "' has been imported and applied.");
+                }
+            } catch (Exception e) {
+                showError("Import Failed", "Could not import the theme from the selected file.\n\nError: " + e.getMessage());
+            }
+        }
+    }
+
+    @FXML
+    private void handleExportTheme() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Export Theme");
+        fileChooser.setInitialFileName("MyNoteyTheme.json");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Theme File", "*.json"));
+        File file = fileChooser.showSaveDialog(dialogStage);
+
+        if (file != null) {
+            ThemeManager.ThemeData currentTheme = new ThemeManager.ThemeData(
+                    ThemeManager.colorToWeb(accentFgColorPicker.getValue()),
+                    ThemeManager.colorToWeb(accentEmphasisColorPicker.getValue()),
+                    ThemeManager.colorToWeb(accentMutedColorPicker.getValue()),
+                    ThemeManager.colorToWeb(accentSubtleColorPicker.getValue())
+            );
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            try (Writer writer = new FileWriter(file)) {
+                gson.toJson(currentTheme, writer);
+            } catch (IOException e) {
+                showError("Export Failed", "Could not save the theme file.\n\nError: " + e.getMessage());
+            }
+        }
+    }
+
+    @FXML
+    private void handleCheckForUpdates() {
+        checkForUpdatesButton.setDisable(true);
+        checkForUpdatesButton.setText("Checking...");
+
+        new Thread(() -> {
+            Optional<String> latestVersionOpt = UpdateChecker.getLatestVersionTag();
+
+            Platform.runLater(() -> {
+                latestVersionOpt.ifPresentOrElse(
+                        latestVersion -> {
+                            if (UpdateHelper.isNewer(latestVersion, VersionInfo.CURRENT_VERSION)) {
+                                showUpdateAvailableDialog(latestVersion);
+                            } else {
+                                showInfo("Up to Date", "You are running the latest version of Notey (" + VersionInfo.CURRENT_VERSION + ").");
+                            }
+                        },
+                        () -> showError("Update Check Failed", "Could not retrieve version information from GitHub. Please check your internet connection and try again.")
+                );
+                checkForUpdatesButton.setDisable(false);
+                checkForUpdatesButton.setText("Check for Updates");
+            });
+        }).start();
+    }
+
+    private void showUpdateAvailableDialog(String newVersion) {
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.initOwner(dialogStage);
+        confirmation.setTitle("Update Available");
+        confirmation.setHeaderText("A new version of Notey is available: " + newVersion.replace("v", ""));
+        confirmation.setContentText("Do you want to download and install it now? The application will restart.");
+        confirmation.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                UpdateHelper.runUpdater(this::showError);
+            }
+        });
+    }
+
+    private void showInfo(String header, String content) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.initOwner(dialogStage);
+        alert.setTitle("Information");
+        alert.setHeaderText(header);
+        alert.setContentText(content);
+        alert.showAndWait();
+    }
+
+    private void showError(String header, String content) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.initOwner(dialogStage);
+        alert.setTitle("Error");
+        alert.setHeaderText(header);
+        alert.setContentText(content);
+        alert.showAndWait();
     }
 }

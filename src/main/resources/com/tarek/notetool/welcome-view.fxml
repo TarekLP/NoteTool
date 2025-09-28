@@ -15,9 +15,15 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 
-<BorderPane prefHeight="768.0" prefWidth="1024.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1">
-   <top>
-      <MenuBar BorderPane.alignment="CENTER">
+<!-- The root is now a VBox to contain the notification pane and the main content -->
+<VBox xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1">
+   <children>
+      <!-- This is the placeholder for the update notification banner -->
+      <VBox fx:id="updateNotificationPane" managed="false" visible="false" styleClass="update-notification-pane" />
+      <!-- The original BorderPane layout is now a child of the root VBox -->
+      <BorderPane prefHeight="768.0" prefWidth="1024.0" VBox.vgrow="ALWAYS">
+         <top>
+            <MenuBar BorderPane.alignment="CENTER">
         <menus>
           <Menu mnemonicParsing="false" text="File">
             <items>
@@ -31,9 +37,9 @@
             </items>
           </Menu>
         </menus>
-      </MenuBar>
-   </top>
-   <center>
+            </MenuBar>
+         </top>
+         <center>
       <SplitPane dividerPositions="0.35, 0.7" prefHeight="160.0" prefWidth="200.0" BorderPane.alignment="CENTER">
         <items>
           <AnchorPane minHeight="0.0" minWidth="0.0" prefHeight="160.0" prefWidth="100.0">
@@ -99,4 +105,6 @@
         </items>
       </SplitPane>
    </center>
-</BorderPane>
+      </BorderPane>
+   </children>
+</VBox>

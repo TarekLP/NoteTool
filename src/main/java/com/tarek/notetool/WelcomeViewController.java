@@ -10,6 +10,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.layout.HBox;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
@@ -153,6 +154,10 @@ public class WelcomeViewController {
     }
 
     private void showUpdateNotification(String newVersion) {
+        if (updateNotificationPane == null) {
+            System.err.println("ERROR: updateNotificationPane is not injected. Please ensure your welcome-view.fxml contains a VBox with fx:id=\"updateNotificationPane\".");
+            return;
+        }
         updateNotificationPane.getChildren().clear();
         updateNotificationPane.setVisible(true);
         updateNotificationPane.setManaged(true);
@@ -181,40 +186,20 @@ public class WelcomeViewController {
     }
 
     private void handleUpdate() {
-        try {
-            // Path to the updater JAR. Assumes it's in the same directory.
-            String updaterJarPath = "AutoUpdater.jar";
-            File updaterJar = new File(updaterJarPath);
-
-            if (!updaterJar.exists()) {
-                showError("Updater Not Found", "The updater application (AutoUpdater.jar) was not found in the application directory.");
-                return;
+        // Show a confirmation before starting the update process
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION, "Notey will close and restart to apply the update. Do you want to continue?", ButtonType.YES, ButtonType.NO);
+        confirmation.setTitle("Confirm Update");
+        confirmation.setHeaderText("Update and Restart?");
+        confirmation.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.YES) {
+                UpdateHelper.runUpdater(this::showError);
             }
-
-            // Launch the updater as a separate process
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", updaterJarPath, VersionInfo.CURRENT_VERSION);
-            pb.start();
-
-            // Exit the main application
-            Platform.exit();
-
-        } catch (IOException e) {
-            showError("Update Failed", "Could not start the updater process. Please try updating manually.\n\nError: " + e.getMessage());
-            e.printStackTrace();
-        }
+        });
     }
 
     private boolean isNewer(String v1, String v2) {
-        String[] parts1 = v1.replace("v", "").split("\\.");
-        String[] parts2 = v2.replace("v", "").split("\\.");
-        int length = Math.max(parts1.length, parts2.length);
-        for (int i = 0; i < length; i++) {
-            int part1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
-            int part2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
-            if (part1 > part2) return true;
-            if (part1 < part2) return false;
-        }
-        return false;
+        // Delegate to the shared, more robust helper method.
+        return UpdateHelper.isNewer(v1, v2);
     }
 
     private void refreshBoardList() {

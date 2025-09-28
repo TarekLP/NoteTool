@@ -20,7 +20,7 @@ public class AutoUpdater {
     private static final String GITHUB_OWNER = "TarekLP";
     private static final String GITHUB_REPO = "NoteTool";
     private static final String GITHUB_API_URL = 
-        "https://api.github.com/repos/" + GITHUB_OWNER + "/" + GITHUB_REPO + "/releases/latest";
+        "https://api.github.com/repos/" + GITHUB_OWNER + "/" + GITHUB_REPO + "/releases";
     // The specific name of the release asset to download.
     private static final String TARGET_ASSET_NAME = "NoteToolDistrib.zip"; 
     // The name of the temporary file used to store the downloaded zip locally.
@@ -118,7 +118,13 @@ public class AutoUpdater {
                 response.append(line);
             }
 
-            String json = response.toString();
+            String jsonResponse = response.toString();
+            // If the response is an empty array `[]`, there are no releases.
+            if (jsonResponse.trim().equals("[]")) {
+                System.err.println("No releases found on GitHub repository.");
+                return null;
+            }
+            String json = jsonResponse;
 
             // Use regex for more robust parsing of the JSON response.
             // This is simpler than adding a full JSON library to a standalone updater.
@@ -277,13 +283,13 @@ public class AutoUpdater {
      */
     private static boolean isNewer(String v1, String v2) {
         // Remove leading 'v' and split by dots
-        String[] parts1 = v1.replace("v", "").split("\\.");
-        String[] parts2 = v2.replace("v", "").split("\\.");
+        String[] parts1 = v1.toLowerCase().replace("v", "").split("\\.");
+        String[] parts2 = v2.toLowerCase().replace("v", "").split("\\.");
 
         int length = Math.max(parts1.length, parts2.length);
         for (int i = 0; i < length; i++) {
-            int part1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
-            int part2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
+            double part1 = i < parts1.length ? Double.parseDouble(parts1[i]) : 0;
+            double part2 = i < parts2.length ? Double.parseDouble(parts2[i]) : 0;
 
             if (part1 > part2) {
                 return true;

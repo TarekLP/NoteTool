@@ -17,7 +17,7 @@ public class UpdateChecker {
     private static final String GITHUB_OWNER = "TarekLP";
     private static final String GITHUB_REPO = "NoteTool";
     private static final String GITHUB_API_URL =
-            "https://api.github.com/repos/" + GITHUB_OWNER + "/" + GITHUB_REPO + "/releases/latest";
+            "https://api.github.com/repos/" + GITHUB_OWNER + "/" + GITHUB_REPO + "/releases";
 
     /**
      * Fetches the latest release version tag from GitHub.
@@ -49,8 +49,16 @@ public class UpdateChecker {
                 while ((line = reader.readLine()) != null) {
                     response.append(line);
                 }
+                String jsonResponse = response.toString();
+
+                // If the response is an empty array `[]`, there are no releases.
+                if (jsonResponse.trim().equals("[]")) {
+                    System.out.println("No releases found on GitHub repository.");
+                    return Optional.empty();
+                }
+
                 Pattern pattern = Pattern.compile("\"tag_name\":\\s*\"(.*?)\"");
-                Matcher matcher = pattern.matcher(response.toString());
+                Matcher matcher = pattern.matcher(jsonResponse);
                 return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
             }
         } catch (IOException e) {

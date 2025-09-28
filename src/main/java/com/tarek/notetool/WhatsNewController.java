@@ -55,18 +55,8 @@ public class WhatsNewController {
         headerLabel.setText("What's New in v" + VersionInfo.CURRENT_VERSION);
 
         List<String> changes = List.of(
-                "**✨ Smoother Animations:** Dragging and dropping notes now feels more fluid with improved visual feedback and physics-based 'settle' animations.",
-                "**✨ Resizable Gallery:** The image gallery panel can now be resized by dragging its left edge to give you more space.",
-                "**✨ Image Hover Effect:** Reference images inside a note now smoothly scale up when you hover over them, making them easier to see.",
-                "**🐛 Bug Fixes & Polish:** This update includes numerous small improvements, including corrected icons and fixes for startup crashes and UI component behavior.",
-                "**✨ Enhanced Markdown Preview:** The live preview now supports syntax highlighting for code blocks and renders GitHub-style task lists (`- [x]`).",
-                "**✨ Live Markdown Editor:** The note editor now features a real-time, side-by-side preview. No more switching tabs to see your formatted text and images!",
-                "**✨ Slide-out Image Gallery:** A new global panel on the right to collect reference images. Toggle it with the new image icon in the top bar.",
-                "**✨ Customizable Columns:** Right-click a column header to rename, add, delete, or reorder columns.",
-                "**✨ Embed Images in Notes:** Type `@` in the note editor to search and embed images from your gallery directly into the note content.",
-                "**✨ Add images to the gallery** from your computer, by pasting image files, or by pasting image data (like screenshots) from your clipboard.",
-                "**✨ Drag-and-Drop References:** Drag images from the gallery and drop them onto a note to create a visual reference.",
-                "**✨ Note Model Update:** The data model for notes and boards has been updated to support customizable columns and image references."
+                "**New Note Model:** A remade and redesigned Note Model ensures only the best saving (not really obviously)"
+                "**Image Gallery Improvements:** Obviously ive remade the Image Gallery to be a lot better and you can even link images in your notes."
         );
 
         changesListView.setItems(FXCollections.observableArrayList(changes));
@@ -87,8 +77,9 @@ public class WhatsNewController {
                         // This needs to be run on the JavaFX Application Thread
                         Platform.runLater(() -> {
                             // Get the height of the content, including padding
-                            Double height = (Double) webEngine.executeScript("document.body.scrollHeight");
-                            if (height != null && height > 0) {
+                            Object result = webEngine.executeScript("document.body.scrollHeight");
+                            if (result instanceof Number) {
+                                double height = ((Number) result).doubleValue();
                                 // Add some extra padding to prevent scrollbars from appearing unnecessarily
                                 webView.setPrefHeight(height + 10);
                                 // Request layout to ensure the ListCell resizes

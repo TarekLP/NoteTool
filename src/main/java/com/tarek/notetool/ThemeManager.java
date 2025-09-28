@@ -23,6 +23,11 @@ public class ThemeManager {
     public static final Color DEFAULT_ACCENT_SUBTLE = Color.web("rgba(147, 112, 219, 0.15)");
 
     /**
+     * A simple data class for serializing/deserializing theme colors.
+     */
+    public record ThemeData(String accentFg, String accentEmphasis, String accentMuted, String accentSubtle) {}
+
+    /**
      * Loads color preferences and applies them to the given scene.
      * If no preferences are found, default purple colors are used.
      * @param scene The scene to apply the theme to.
